@@ -1,0 +1,29 @@
+[project]
+name = "pet-project"
+version = "0.1.0"
+description = "Universal containerized pet project template"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "ipykernel>=7.0.0,<8",
+  "jupyterlab>=4.4.0,<5",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4.0,<9",
+  "ruff>=0.12.0,<1",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint.per-file-ignores]
+# The host-side manager intentionally remains compatible with Python 3.9.
+"c" = ["UP045"]
+
+[tool.pytest.ini_options]
+testpaths = ["../tests"]

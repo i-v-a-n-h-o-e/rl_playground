@@ -1,0 +1,14 @@
+.git
+.github
+.docker/.env
+.docker/.runtime
+.python_env/.venv
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache
+.ipynb_checkpoints
+.DS_Store
+docker_prj
+docker_expirimental
+logs

@@ -1,0 +1,30 @@
+# Local secrets and container runtime state
+.docker/.env
+.docker/.runtime/
+.docker/compose.override.yml
+
+# Python and uv
+.venv/
+.python_env/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Project output
+build/
+dist/
+*.egg-info/
+logs/
+
+# IDE and operating system
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

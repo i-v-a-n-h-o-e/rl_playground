@@ -1,0 +1,35 @@
+services:
+  dev:
+    image: "${IMAGE_NAME:-pet-project-dev}:${IMAGE_TAG:-local}"
+    build:
+      context: .
+      dockerfile: .docker/Dockerfile
+      args:
+        DEVELOPER_UID: "${CONTAINER_UID:-1000}"
+        DEVELOPER_GID: "${CONTAINER_GID:-1000}"
+        SOURCE_URL: "${SOURCE_URL:-}"
+    container_name: "${CONTAINER_NAME:-pet-project-dev}"
+    hostname: "${CONTAINER_HOSTNAME:-pet-project-dev}"
+    working_dir: /workspace
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    stop_grace_period: 20s
+    env_file:
+      - path: .docker/.env
+        required: true
+    environment:
+      HOST_UID: "${CONTAINER_UID:-1000}"
+      HOST_GID: "${CONTAINER_GID:-1000}"
+      PYTHONPATH: /workspace
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:${SSH_PORT:-2222}:22"
+      - "${BIND_ADDRESS:-0.0.0.0}:${JUPYTER_PORT:-8888}:8888"
+    volumes:
+      - .:/workspace
+      - vscode-server:/home/developer/.vscode-server
+      - uv-cache:/home/developer/.cache/uv
+
+volumes:
+  vscode-server:
+  uv-cache:

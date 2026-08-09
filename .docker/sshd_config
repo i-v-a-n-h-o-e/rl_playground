@@ -1,0 +1,26 @@
+Port 22
+Protocol 2
+
+# Generated once in /workspace/.docker/.runtime/ssh by the entrypoint.
+HostKey /workspace/.docker/.runtime/ssh/ssh_host_ed25519_key
+HostKey /workspace/.docker/.runtime/ssh/ssh_host_rsa_key
+
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+AuthorizedKeysFile .ssh/authorized_keys
+AllowUsers developer
+
+AllowAgentForwarding yes
+AllowTcpForwarding yes
+X11Forwarding no
+PermitTunnel no
+GatewayPorts no
+
+UsePAM yes
+PrintMotd no
+PidFile /run/sshd.pid
+Subsystem sftp internal-sftp
