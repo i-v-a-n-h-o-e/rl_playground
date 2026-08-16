@@ -21,6 +21,7 @@ build/
 dist/
 *.egg-info/
 logs/
+data/
 
 # IDE and operating system
 .DS_Store

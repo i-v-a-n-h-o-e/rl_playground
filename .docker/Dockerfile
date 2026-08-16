@@ -9,8 +9,8 @@ ARG DEVELOPER_UID=1000
 ARG DEVELOPER_GID=1000
 ARG SOURCE_URL=""
 
-LABEL org.opencontainers.image.title="Universal pet project environment" \
-      org.opencontainers.image.description="Ubuntu-based Python, C++, JupyterLab and SSH development environment" \
+LABEL org.opencontainers.image.title="RL playground" \
+      org.opencontainers.image.description="PyTorch and Gymnasium development environment with JupyterLab" \
       org.opencontainers.image.source="${SOURCE_URL}"
 
 ENV DEBIAN_FRONTEND=noninteractive \

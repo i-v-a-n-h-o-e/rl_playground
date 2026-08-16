@@ -26,10 +26,15 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(manager.ENV_FILE, ROOT / ".docker" / ".env")
         self.assertEqual(manager.COMPOSE_FILE, ROOT / ".docker" / "compose.yml")
         self.assertEqual(manager.RUNTIME_DIR, ROOT / ".docker" / ".runtime")
+        self.assertEqual(manager.PYTHON_PROJECT_DIR, ROOT / ".python_env")
 
     def test_aliases_point_to_existing_commands(self) -> None:
         for command in manager.ALIASES.values():
             self.assertIn(command, manager.COMMANDS)
+
+    def test_native_environment_commands_exist(self) -> None:
+        self.assertIn("native-sync", manager.COMMANDS)
+        self.assertIn("native-check", manager.COMMANDS)
 
     def test_project_slug_is_compose_safe(self) -> None:
         self.assertRegex(manager.project_slug(), r"^[a-z0-9][a-z0-9-]*$")

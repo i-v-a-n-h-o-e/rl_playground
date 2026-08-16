@@ -23,6 +23,7 @@ RUNTIME_DIR = DOCKER_DIR / ".runtime"
 AUTHORIZED_KEYS = RUNTIME_DIR / "authorized_keys"
 COMPOSE_FILE = DOCKER_DIR / "compose.yml"
 COMPOSE_OVERRIDE_FILE = DOCKER_DIR / "compose.override.yml"
+PYTHON_PROJECT_DIR = ROOT / ".python_env"
 SERVICE = "dev"
 
 ALIASES = {
@@ -260,6 +261,38 @@ def command_exec(arguments: list[str]) -> None:
     compose("exec", SERVICE, *(arguments or ["bash", "-l"]))
 
 
+def ensure_uv() -> None:
+    if shutil.which("uv") is None:
+        raise CommandError(
+            "uv is not installed; install it from https://docs.astral.sh/uv/ and retry"
+        )
+
+
+def command_native_sync(arguments: list[str]) -> None:
+    if arguments:
+        raise CommandError("native-sync does not accept arguments")
+    ensure_uv()
+    run(["uv", "sync", "--project", str(PYTHON_PROJECT_DIR), "--locked"])
+    print("native environment is ready; inspect acceleration with './c native-check'")
+
+
+def command_native_check(arguments: list[str]) -> None:
+    if arguments:
+        raise CommandError("native-check does not accept arguments")
+    ensure_uv()
+    run(
+        [
+            "uv",
+            "run",
+            "--project",
+            str(PYTHON_PROJECT_DIR),
+            "--locked",
+            "python",
+            str(ROOT / "examples" / "check_acceleration.py"),
+        ]
+    )
+
+
 def command_logs(arguments: list[str]) -> None:
     parser = argparse.ArgumentParser(prog="./c logs")
     parser.add_argument("--tail", default="200")
@@ -389,7 +422,7 @@ def print_access() -> None:
 
 def print_help() -> None:
     print(
-        """Universal pet project container
+        """RL playground environment
 
 Usage: ./c COMMAND [OPTIONS]
 
@@ -401,6 +434,8 @@ Commands:
   restart, r    restart services
   attach, a     open a login shell in the container
   exec, e       execute a command in the container
+  native-sync   create/update the host Python environment (MPS on Apple Silicon)
+  native-check  verify libraries and report the selected PyTorch accelerator
   ssh           connect through the container SSH server
   logs, l       follow SSH, Jupyter and supervised app logs
   status, p     show Compose and supervisor status
@@ -417,6 +452,8 @@ Examples:
   ./c build
   ./c start
   ./c attach
+  ./c native-sync
+  ./c native-check
   ./c session worker -- python examples/worker.py
   ./c session worker              # Ctrl-b d detaches
   ./c session worker --capture
@@ -434,6 +471,8 @@ COMMANDS = {
     "restart": command_restart,
     "attach": command_attach,
     "exec": command_exec,
+    "native-sync": command_native_sync,
+    "native-check": command_native_check,
     "logs": command_logs,
     "status": command_status,
     "ssh": command_ssh,

@@ -1,11 +1,18 @@
 [project]
-name = "pet-project"
+name = "rl-playground"
 version = "0.1.0"
-description = "Universal containerized pet project template"
+description = "Reinforcement-learning playground for PyTorch and Gymnasium"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+  "gymnasium[classic-control]>=1.2.0,<2",
   "ipykernel>=7.0.0,<8",
   "jupyterlab>=4.4.0,<5",
+  "matplotlib>=3.9.0,<4",
+  "numpy>=2.0.0,<3",
+  "opencv-python-headless>=4.10.0.0,<5",
+  "plotly>=6.0.0,<7",
+  "torch>=2.6.0,<3",
+  "torchvision>=0.21.0,<1",
 ]
 
 [dependency-groups]
@@ -16,6 +23,22 @@ dev = [
 
 [tool.uv]
 package = false
+
+# Linux containers cannot use Apple's Metal GPU. Keep their PyTorch wheel CPU-only
+# instead of pulling several gigabytes of unused CUDA libraries. On macOS uv falls
+# back to PyPI, whose native wheel includes the MPS backend.
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
+]
+torchvision = [
+  { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.ruff]
 line-length = 100

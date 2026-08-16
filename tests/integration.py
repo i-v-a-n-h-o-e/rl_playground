@@ -125,6 +125,10 @@ def main() -> None:
     container_exec("uv", "lock", "--check")
     assert_contains(container_exec("cmake", "--version").stdout, "cmake version")
     assert_contains(container_exec("ninja", "--version").stdout, "1.")
+    ml_smoke = container_exec("python", "examples/check_acceleration.py").stdout
+    assert_contains(ml_smoke, "torchvision=")
+    assert_contains(ml_smoke, "accelerator=cpu")
+    assert_contains(ml_smoke, "smoke=ok")
 
     container_exec(
         "bash",

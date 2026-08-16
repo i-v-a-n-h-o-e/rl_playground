@@ -1,8 +1,9 @@
-# Universal pet project environment
+# RL playground
 
-A forkable Ubuntu 24.04 container for Python, Jupyter, C/C++, automation, bots, and small
-long-running services. The same repository can run through Docker Desktop on Apple Silicon or
-Docker Engine on `linux/arm64` and `linux/amd64` hosts.
+A reproducible reinforcement-learning environment with PyTorch, TorchVision, Gymnasium
+(including classic control environments), OpenCV, Plotly, Matplotlib, NumPy, and JupyterLab. It runs in Ubuntu
+24.04 containers on `linux/arm64` and `linux/amd64`, or natively on Apple Silicon when Metal GPU
+acceleration is required.
 
 The repository is mounted at `/workspace`; source code, application configuration, notebooks,
 and project logs therefore remain ordinary files on the host. SSH, JupyterLab, and an optional
@@ -23,16 +24,47 @@ Check a Linux host with `uname -m`: `aarch64` is the expected value for `arm64`.
 
 - Docker with Compose v2 (`docker compose version`);
 - Python 3.9 or newer on the host for the `./c` manager;
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) for the native macOS environment;
 - an OpenSSH public key, preferably `~/.ssh/id_ed25519.pub`.
 
 ## Quick start
+
+### Reproducible CPU environment in Docker
 
 ```bash
 ./c init
 ./c build
 ./c start
 ./c status
+./c exec python examples/check_acceleration.py
 ```
+
+Docker uses all CPU cores made available in Docker Desktop and gets 2 GB of shared memory by
+default. Increase Docker Desktop's VM CPU/memory limits if a workload needs more. The Linux
+image intentionally installs the smaller CPU-only PyTorch build.
+
+### Apple GPU acceleration with PyTorch MPS
+
+Docker Desktop runs Linux in a VM and cannot expose the Mac's Metal GPU or Apple Neural Engine
+to PyTorch. Run training natively when acceleration matters:
+
+```bash
+./c native-sync
+./c native-check
+uv run --project .python_env jupyter lab
+```
+
+The check should print `accelerator=mps` on a supported Apple Silicon Mac. Training code can
+reuse `best_torch_device()` from `examples/check_acceleration.py`, or select the device directly:
+
+```python
+device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+model = model.to(device)
+```
+
+The Neural Engine is not a general PyTorch training device. It is available through native
+Apple frameworks such as Core ML, primarily for supported converted models and inference. See
+[`docs/hardware.md`](docs/hardware.md) for the full decision guide.
 
 `./c init` copies the first supported public key from `~/.ssh`, generates a random Jupyter
 token, and writes both into ignored local files. To select a key explicitly:
@@ -66,6 +98,8 @@ The repository root intentionally stays small:
 | `./c restart` | `r` | Restart all services |
 | `./c attach` | `a` | Open Bash through `docker compose exec` |
 | `./c exec COMMAND` | `e` | Run a command in the container |
+| `./c native-sync` | — | Create/update the host environment for Apple MPS |
+| `./c native-check` | — | Smoke-test the ML stack and report acceleration |
 | `./c ssh` | — | Open an SSH session to the local container |
 | `./c logs` | `l` | Follow container and supervised application logs |
 | `./c status` | `p` | Show Compose and supervisor status |
@@ -123,6 +157,15 @@ the browser endpoint.
 
 Runtime dependencies live in `.python_env/pyproject.toml`; development tools use the `dev`
 dependency group. `.python_env/uv.lock` makes image builds reproducible.
+
+The included runtime stack is:
+
+- `torch` and `torchvision` (CPU-only wheels in Linux containers; native MPS-capable wheels on
+  macOS);
+- `gymnasium[classic-control]`;
+- `opencv-python-headless` (the `cv2` API without GUI dependencies, suitable for notebooks and
+  containers);
+- `plotly`, `matplotlib`, and `numpy`.
 
 Inside the container:
 
@@ -221,16 +264,22 @@ default. See [`docs/hardware.md`](docs/hardware.md) for scoped Compose override 
 
 ## Validation
 
-Fast host-side checks do not require a running container:
+Fast host-side checks do not require a running container or the ML environment:
 
 ```bash
 python3 -m unittest discover -s tests -v
 ./c doctor
 ```
 
+After `./c native-sync`, verify every requested library and the active accelerator with:
+
+```bash
+./c native-check
+```
+
 After building the image, the integration test exercises the health check, supervisor, C++
-compiler, bind mount, public-key SSH, authenticated Jupyter, worker logs, tmux, restart, and
-stop:
+compiler, ML/RL imports and computations, bind mount, public-key SSH, authenticated Jupyter,
+worker logs, tmux, restart, and stop:
 
 ```bash
 python3 tests/integration.py
