@@ -6,6 +6,8 @@ from __future__ import annotations
 import platform
 
 import cv2
+import gym as legacy_gym
+import gym_maze  # noqa: F401  # Registers the original gym-maze environments.
 import gymnasium as gym
 import matplotlib
 import numpy as np
@@ -41,12 +43,24 @@ def main() -> None:
     observation, _ = environment.reset(seed=42)
     environment.step(environment.action_space.sample())
     environment.close()
+    maze_environment = legacy_gym.make(
+        "maze-sample-5x5-v0",
+        apply_api_compatibility=True,
+        disable_env_checker=True,
+        enable_render=False,
+    )
+    maze_observation, _ = maze_environment.reset(seed=42)
+    maze_transition = maze_environment.step(maze_environment.action_space.sample())
+    maze_environment.close()
+    maze_environment.unwrapped.env.maze_view.quit_game()
     plt.close(matplotlib_figure)
 
     assert product.shape == (3, 3)
     assert gray.shape == (8, 8)
     assert len(figure.data) == 1
     assert observation.shape == (4,)
+    assert maze_observation.shape == (2,)
+    assert len(maze_transition) == 5
 
     print(f"platform={platform.system()} {platform.machine()}")
     print(f"torch={torch.__version__}")
@@ -54,6 +68,7 @@ def main() -> None:
     print(f"accelerator={device.type}")
     print(f"mps_built={torch.backends.mps.is_built()}")
     print(f"mps_available={torch.backends.mps.is_available()}")
+    print("gym-maze=ok")
     print("smoke=ok")
 
 

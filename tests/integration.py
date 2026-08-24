@@ -127,6 +127,7 @@ def main() -> None:
     assert_contains(container_exec("ninja", "--version").stdout, "1.")
     ml_smoke = container_exec("python", "examples/check_acceleration.py").stdout
     assert_contains(ml_smoke, "torchvision=")
+    assert_contains(ml_smoke, "gym-maze=ok")
     assert_contains(ml_smoke, "accelerator=cpu")
     assert_contains(ml_smoke, "smoke=ok")
 
