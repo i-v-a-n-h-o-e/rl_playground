@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Reinforcement-learning playground for PyTorch and Gymnasium"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+  "gym==0.26.2",
+  "gym-maze",
   "gymnasium[classic-control]>=1.2.0,<2",
   "ipykernel>=7.0.0,<8",
   "jupyterlab>=4.4.0,<5",
@@ -28,6 +30,7 @@ package = false
 # instead of pulling several gigabytes of unused CUDA libraries. On macOS uv falls
 # back to PyPI, whose native wheel includes the MPS backend.
 [tool.uv.sources]
+gym-maze = { git = "https://github.com/MattChanTK/gym-maze.git", rev = "83176811b49b5538a6213520612f44fb1bc49114" }
 torch = [
   { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
 ]

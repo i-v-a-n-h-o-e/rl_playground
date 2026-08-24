@@ -162,10 +162,29 @@ The included runtime stack is:
 
 - `torch` and `torchvision` (CPU-only wheels in Linux containers; native MPS-capable wheels on
   macOS);
-- `gymnasium[classic-control]`;
+- `gymnasium[classic-control]` for current environments, plus the original `gym-maze` pinned
+  to a known commit with Gym 0.26 compatibility enabled by the example;
 - `opencv-python-headless` (the `cv2` API without GUI dependencies, suitable for notebooks and
   containers);
 - `plotly`, `matplotlib`, and `numpy`.
+
+Run the original MattChanTK 5x5 sample maze with:
+
+```bash
+uv run --project .python_env python RL/practice.py
+```
+
+The command opens the original pygame renderer. For a terminal/container smoke test, disable
+the window and optionally shorten the episode:
+
+```bash
+uv run --project .python_env python RL/practice.py --no-render --max-steps 20
+```
+
+`gym-maze` uses Gym's legacy API. `RL/practice.py` enables Gym 0.26's compatibility wrapper,
+so `reset()` returns `(observation, info)` and `step()` returns
+`(observation, reward, terminated, truncated, info)` while preserving the original
+`maze-sample-5x5-v0` ID, map, rewards, and `(x, y)` observation.
 
 Inside the container:
 
