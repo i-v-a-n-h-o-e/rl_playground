@@ -116,10 +116,10 @@ def get_trajectory(
     max_steps: int = 1000) -> Trajectory:
     trajectory: Trajectory = {"states": [], "actions": [], "rewards": []}
 
-    observation, _ = env.reset(seed=42)
+    observation, _ = env.reset()
     state = int(observation)
 
-    env.action_space.seed(42)
+    # env.action_space.seed(42)
 
     for step in range(max_steps):
         trajectory["states"].append(state)
@@ -147,9 +147,9 @@ print(
 train_env = make_env(render_mode=None)
 
 agent = CrossEntropyAgent(train_env.observation_space.n, train_env.action_space.n)
-q_param = 0.9
-trajectory_n = 50
-iteration_n = 10
+q_param = 0.85
+trajectory_n = 3000
+iteration_n = 20
 mean_rewards_by_iteration: list[float] = []
 max_rewards_by_iteration: list[float] = []
 
@@ -179,3 +179,4 @@ plot_training_rewards(mean_rewards_by_iteration, max_rewards_by_iteration)
 trajectory =get_trajectory(visual_env, agent, max_steps=200)
 print("total reward:", sum(trajectory['rewards']))
 print("model:", agent.model)
+print(np.sum(np.sum(agent.model > 0.99, axis=1) == 1))
