@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from math import atan2, cos, hypot, isfinite, pi, sin, sqrt
+from math import atan2, cos, hypot, isfinite, sin, sqrt
 from typing import Literal
 
-from RL.chauffeur_theory import BETA, GAMMA, USABLE_PART_ANGLE, retrograde_position
-from RL.homicidal_chauffeur import GameConfig, HomicidalChauffeurEnv
+from RL.chauffeur_theory import BETA, GAMMA, retrograde_position
+from RL.homicidal_chauffeur import GameConfig, HomicidalChauffeurEnv, is_captured
 
 DEFAULT_CONFIG = GameConfig(gamma=GAMMA, beta=BETA)
 AXIS_TOLERANCE = 1e-9
@@ -33,10 +33,6 @@ def _check_parameters(config: GameConfig) -> None:
         raise ValueError(f"Classical feedback requires gamma={GAMMA} and beta={BETA}")
 
 
-def _wrap(angle: float) -> float:
-    return (angle + pi) % (2 * pi) - pi
-
-
 def classical_feedback(state: State, config: GameConfig = DEFAULT_CONFIG) -> Feedback | None:
     """Evaluate the supported branches and their continuous time to capture.
 
@@ -49,7 +45,7 @@ def classical_feedback(state: State, config: GameConfig = DEFAULT_CONFIG) -> Fee
         raise ValueError("Classical feedback requires finite coordinates")
 
     u = abs(x)
-    if hypot(u, y) <= BETA:
+    if is_captured((x, y), config.beta):
         return Feedback("capture", None, None, 0.0)
     if u <= AXIS_TOLERANCE and y > BETA:
         return Feedback("UL", 0.0, 0.0, (y - BETA) / (1 - GAMMA))
@@ -66,7 +62,7 @@ def classical_feedback(state: State, config: GameConfig = DEFAULT_CONFIG) -> Fee
             residual = hypot(1 - cos(a) + h * sin(a) - u, sin(a) + h * cos(a) - y)
             if residual <= RESIDUAL_TOLERANCE:
                 time_to_capture = a + (y1 - BETA) / (1 - GAMMA)
-                return Feedback("turn_to_UL", side, _wrap(side * a), time_to_capture)
+                return Feedback("turn_to_UL", side, side * a, time_to_capture)
 
     if y < 0.26:
         return None
@@ -87,11 +83,11 @@ def classical_feedback(state: State, config: GameConfig = DEFAULT_CONFIG) -> Fee
     time = (lo + hi) / 2
     angle = atan2(u - 1 + cos(time), y - sin(time))
     theta = angle - time
-    if 0.2 - BOUNDARY_TOLERANCE <= theta <= 0.5 + BOUNDARY_TOLERANCE and theta < USABLE_PART_ANGLE:
+    if 0.2 - BOUNDARY_TOLERANCE <= theta <= 0.5 + BOUNDARY_TOLERANCE:
         px, py = retrograde_position(theta, time)
         if hypot(px - u, py - y) <= RESIDUAL_TOLERANCE:
             # In this interval theta>0 and theta+time<pi, so S>0 throughout.
-            return Feedback("primary", side, _wrap(side * angle), time)
+            return Feedback("primary", side, side * angle, time)
     return None
 
 

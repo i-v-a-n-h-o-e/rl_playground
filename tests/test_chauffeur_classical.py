@@ -123,6 +123,25 @@ class ClassicalChauffeurTests(unittest.TestCase):
         self.assertEqual(limited.outcome, "time_limit")
         self.assertEqual(limited.trajectory[-1].time, 0.12)
 
+    def test_feedback_uses_the_same_capture_boundary_as_reset(self) -> None:
+        env = HomicidalChauffeurEnv()
+        for state, outside_branch in (
+            ((0.006282725965007086, 0.29993420504245366), None),
+            ((0.06018871959163782, 0.2939001837936125), "primary"),
+        ):
+            with self.subTest(state=state):
+                feedback = classical_feedback(state)
+                # A norm at this scale may round to either side on different builds.
+                if np.linalg.norm(state) <= env.config.beta:
+                    with self.assertRaisesRegex(ValueError, "outside the capture circle"):
+                        env.reset(options={"state": state})
+                    self.assertEqual(feedback.branch, "capture")
+                else:
+                    env.reset(options={"state": state})
+                    self.assertEqual(feedback.branch if feedback else None, outside_branch)
+                    expected_outcome = "capture" if outside_branch == "primary" else "unsupported"
+                    self.assertEqual(rollout_classical(state).outcome, expected_outcome)
+
     def test_tangential_barrier_geometry(self) -> None:
         self.assertAlmostEqual(BARRIER_END_TIME, 4 * pi / 3)
         contact = tangential_barrier(0)
@@ -147,3 +166,24 @@ class ClassicalChauffeurTests(unittest.TestCase):
         _, _, terminated, truncated, info = env.step_controls(0, 0, stop_at_positive_axis=True)
         self.assertEqual((terminated, truncated, info["axis_crossing"]), (False, True, False))
         self.assertEqual(info["elapsed_time"], config.horizon)
+
+    def test_axis_event_at_step_endpoint(self) -> None:
+        env = HomicidalChauffeurEnv(GameConfig(dt=0.05))
+        x_at_crossing = 0.11447027157116405
+        for x, expected in (
+            (x_at_crossing, True),
+            (0.11447027157116409, True),
+            (x_at_crossing + 1e-10, False),
+        ):
+            with self.subTest(x=x):
+                env.reset(options={"state": (x, 2.3)})
+                _, _, terminated, truncated, info = env.step_controls(
+                    1, 0, stop_at_positive_axis=True
+                )
+                self.assertFalse(terminated or truncated)
+                self.assertAlmostEqual(info["dt"], 0.05, places=14)
+                self.assertEqual(info["axis_crossing"], expected)
+                if expected:
+                    self.assertEqual(info["state"][0], 0.0)
+                else:
+                    self.assertGreater(info["state"][0], 0.0)

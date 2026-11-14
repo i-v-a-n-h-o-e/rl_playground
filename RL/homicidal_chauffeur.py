@@ -49,6 +49,11 @@ def dynamics(state: ArrayLike, phi: float, psi: float, gamma: float) -> NDArray[
     return np.array([-phi * y + gamma * np.sin(psi), -1.0 + phi * x + gamma * np.cos(psi)])
 
 
+def is_captured(state: ArrayLike, beta: float) -> bool:
+    """Compare the float64 distance with the closed capture radius."""
+    return bool(np.linalg.norm(np.asarray(state, dtype=np.float64)) <= beta)
+
+
 def _rk4_path(
     state: NDArray[np.float64], phi: float, psi: float, gamma: float, dt: float
 ) -> NDArray[np.float64]:
@@ -107,16 +112,29 @@ def _capture_fraction(coefficients: NDArray[np.float64], beta: float) -> float |
 def _positive_axis_fraction(coefficients: NDArray[np.float64], beta: float) -> float | None:
     """First junction with x=0 and y>beta along the numerical RK4 path."""
     polynomial = np.polynomial.polynomial
+    x = coefficients[:, 0]
     crossings = (
         float(root.real)
-        for root in polynomial.polyroots(coefficients[:, 0])
+        for root in polynomial.polyroots(x)
         if (
             root.imag == 0
             and 0 < root.real <= 1
             and polynomial.polyval(root.real, coefficients[:, 1]) > beta
         )
     )
-    return min(crossings, default=None)
+    first = min(crossings, default=None)
+    if first is not None:
+        return first
+
+    # An endpoint root may round above 1. Scale the residual allowance by
+    # the coefficient magnitudes. The strict comparison skips an all-zero x.
+    tolerance = 64 * np.finfo(np.float64).eps * np.sum(abs(x))
+    if (
+        abs(polynomial.polyval(1.0, x)) < tolerance
+        and polynomial.polyval(1.0, coefficients[:, 1]) > beta
+    ):
+        return 1.0
+    return None
 
 
 class HomicidalChauffeurEnv(gym.Env[Observation, NDArray[np.float32]]):
@@ -181,14 +199,14 @@ class HomicidalChauffeurEnv(gym.Env[Observation, NDArray[np.float32]]):
             state = np.array(options["state"], dtype=np.float64, copy=True)
             if state.shape != (2,) or not np.all(np.isfinite(state)):
                 raise ValueError("Initial state must be a finite vector of shape (2,)")
-            if np.linalg.norm(state) <= self.config.beta:
+            if is_captured(state, self.config.beta):
                 raise ValueError("Initial state must be outside the capture circle")
         else:
             while True:
                 state = self.np_random.uniform(
                     self.config.initial_low, self.config.initial_high, size=2
                 )
-                if np.linalg.norm(state) > self.config.beta:
+                if not is_captured(state, self.config.beta):
                     break
         self._state = state
         self.elapsed_time = 0.0
