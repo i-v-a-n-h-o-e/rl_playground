@@ -112,28 +112,37 @@ def _capture_fraction(coefficients: NDArray[np.float64], beta: float) -> float |
 def _positive_axis_fraction(coefficients: NDArray[np.float64], beta: float) -> float | None:
     """First junction with x=0 and y>beta along the numerical RK4 path."""
     polynomial = np.polynomial.polynomial
-    x = coefficients[:, 0]
-    crossings = (
+    x, y = coefficients.T
+    # Split at stationary points so even very close roots can be found on
+    # separate monotone intervals.
+    stationary = sorted(
         float(root.real)
-        for root in polynomial.polyroots(x)
-        if (
-            root.imag == 0
-            and 0 < root.real <= 1
-            and polynomial.polyval(root.real, coefficients[:, 1]) > beta
-        )
+        for root in polynomial.polyroots(polynomial.polyder(x))
+        if root.imag == 0 and 0 < root.real < 1
     )
-    first = min(crossings, default=None)
-    if first is not None:
-        return first
+    roundoff = 64 * np.finfo(np.float64).eps
+    magnitude = abs(x)
+    left, x_left = 0.0, x[0]
+    for right in (*stationary, 1.0):
+        x_right = polynomial.polyval(right, x)
+        if x_left < 0 < x_right or x_right < 0 < x_left:
+            lo, hi = left, right
+            for _ in range(50):
+                mid = (lo + hi) / 2
+                if (polynomial.polyval(mid, x) < 0) == (x_left < 0):
+                    lo = mid
+                else:
+                    hi = mid
+            crossing = (lo + hi) / 2
+            if polynomial.polyval(crossing, y) > beta:
+                return crossing
 
-    # An endpoint root may round above 1. Scale the residual allowance by
-    # the coefficient magnitudes. The strict comparison skips an all-zero x.
-    tolerance = 64 * np.finfo(np.float64).eps * np.sum(abs(x))
-    if (
-        abs(polynomial.polyval(1.0, x)) < tolerance
-        and polynomial.polyval(1.0, coefficients[:, 1]) > beta
-    ):
-        return 1.0
+        # A tangency or an endpoint root may miss zero through roundoff.
+        # Scale by the terms evaluated here. An all-zero x gives no event.
+        tolerance = roundoff * polynomial.polyval(right, magnitude)
+        if abs(x_right) < tolerance and polynomial.polyval(right, y) > beta:
+            return right
+        left, x_left = right, x_right
     return None
 
 

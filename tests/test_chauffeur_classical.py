@@ -187,3 +187,27 @@ class ClassicalChauffeurTests(unittest.TestCase):
                     self.assertEqual(info["state"][0], 0.0)
                 else:
                     self.assertGreater(info["state"][0], 0.0)
+
+    def test_axis_event_near_an_interior_stationary_point(self) -> None:
+        env = HomicidalChauffeurEnv(GameConfig(dt=0.05))
+        x, y = 1.999999333335103e-06, 0.501999998666668
+        for start_x, expected_time in (
+            (x, 0.002),
+            (x + 2e-20, 0.002),  # Residual is at roundoff scale near the minimum.
+            (x - 1e-14, 0.00199985858),  # Two intersections within the step.
+        ):
+            with self.subTest(start_x=start_x):
+                env.reset(options={"state": (start_x, y)})
+                _, _, terminated, truncated, info = env.step_controls(
+                    1, pi / 2, stop_at_positive_axis=True
+                )
+                self.assertFalse(terminated or truncated)
+                self.assertTrue(info["axis_crossing"])
+                self.assertAlmostEqual(info["elapsed_time"], expected_time, delta=1e-9)
+                self.assertEqual(info["state"][0], 0.0)
+                self.assertAlmostEqual(info["state"][1], 0.5, delta=2e-7)
+
+        env.reset(options={"state": (x + 1e-18, y)})
+        _, _, _, _, info = env.step_controls(1, pi / 2, stop_at_positive_axis=True)
+        self.assertFalse(info["axis_crossing"])
+        self.assertEqual(info["elapsed_time"], env.config.dt)
