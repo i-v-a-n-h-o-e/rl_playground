@@ -104,6 +104,21 @@ def _capture_fraction(coefficients: NDArray[np.float64], beta: float) -> float |
     return None
 
 
+def _positive_axis_fraction(coefficients: NDArray[np.float64], beta: float) -> float | None:
+    """First junction with x=0 and y>beta along the numerical RK4 path."""
+    polynomial = np.polynomial.polynomial
+    crossings = (
+        float(root.real)
+        for root in polynomial.polyroots(coefficients[:, 0])
+        if (
+            root.imag == 0
+            and 0 < root.real <= 1
+            and polynomial.polyval(root.real, coefficients[:, 1]) > beta
+        )
+    )
+    return min(crossings, default=None)
+
+
 class HomicidalChauffeurEnv(gym.Env[Observation, NDArray[np.float32]]):
     """Two-control simulator with a pursuer-only Gymnasium interface.
 
@@ -198,11 +213,15 @@ class HomicidalChauffeurEnv(gym.Env[Observation, NDArray[np.float32]]):
         psi = 0.0 if self.evader_policy is None else self.evader_policy(self._observation())
         return self.step_controls(phi, psi)
 
-    def step_controls(self, phi: ArrayLike, psi: ArrayLike) -> Transition:
+    def step_controls(
+        self, phi: ArrayLike, psi: ArrayLike, *, stop_at_positive_axis: bool = False
+    ) -> Transition:
         """Advance both players; clip phi to [-1,1] and psi to [-pi,pi].
 
         Capture takes precedence if it coincides with the time limit. The last
         step is shortened to end exactly at the horizon or at numerical capture.
+        Opt in to ending the step early at x=0, y>beta, so the caller can
+        recompute controls there. This event alone does not end the episode.
         """
         self._require_active()
         phi = self._control(phi, 1.0, "phi")
@@ -214,19 +233,25 @@ class HomicidalChauffeurEnv(gym.Env[Observation, NDArray[np.float32]]):
         state = self.state
         coefficients = _rk4_path(state, phi, psi, self.config.gamma, dt)
         # Radial speed is bounded by 1+gamma; distant states cannot be captured.
-        fraction = None
+        capture = None
         if np.linalg.norm(state) - (1 + self.config.gamma) * dt <= self.config.beta:
-            fraction = _capture_fraction(coefficients, self.config.beta)
-        terminated = fraction is not None
-        fraction = 1.0 if fraction is None else fraction
+            capture = _capture_fraction(coefficients, self.config.beta)
+        axis = None
+        if stop_at_positive_axis:
+            axis = _positive_axis_fraction(coefficients, self.config.beta)
+        terminated = capture is not None and (axis is None or capture <= axis)
+        axis_crossing = axis is not None and not terminated
+        fraction = min(event for event in (capture, axis, 1.0) if event is not None)
         self._state = np.polynomial.polynomial.polyval(fraction, coefficients)
+        if axis_crossing:
+            self._state[0] = 0.0
         self.elapsed_time = (
             self.config.horizon
-            if at_horizon and not terminated
+            if at_horizon and fraction == 1.0
             else self.elapsed_time + dt * fraction
         )
+        truncated = self.elapsed_time >= self.config.horizon and not terminated
         self.step_count += 1
-        truncated = at_horizon and not terminated
         if terminated:
             # Remove root-solver roundoff at the capture boundary.
             self._state *= np.nextafter(self.config.beta, 0.0) / np.linalg.norm(self._state)
@@ -234,5 +259,5 @@ class HomicidalChauffeurEnv(gym.Env[Observation, NDArray[np.float32]]):
         elif truncated:
             self.termination_reason = "time_limit"
         info = self._info()
-        info.update(phi=phi, psi=psi, dt=dt * fraction)
+        info.update(phi=phi, psi=psi, dt=dt * fraction, axis_crossing=axis_crossing)
         return self._observation(), 0.0, terminated, truncated, info
