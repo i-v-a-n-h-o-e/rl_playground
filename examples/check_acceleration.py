@@ -12,6 +12,7 @@ import gymnasium as gym
 import matplotlib
 import numpy as np
 import plotly.graph_objects as go
+import stable_baselines3
 import torch
 import torchvision
 
@@ -65,6 +66,7 @@ def main() -> None:
     print(f"platform={platform.system()} {platform.machine()}")
     print(f"torch={torch.__version__}")
     print(f"torchvision={torchvision.__version__}")
+    print(f"stable-baselines3={stable_baselines3.__version__}")
     print(f"accelerator={device.type}")
     print(f"mps_built={torch.backends.mps.is_built()}")
     print(f"mps_available={torch.backends.mps.is_available()}")

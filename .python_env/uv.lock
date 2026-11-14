@@ -1427,6 +1427,7 @@ dependencies = [
     { name = "numpy" },
     { name = "opencv-python-headless" },
     { name = "plotly" },
+    { name = "stable-baselines3" },
     { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
     { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'linux'" },
     { name = "torchvision", version = "0.28.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
@@ -1451,6 +1452,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.24,<2" },
     { name = "opencv-python-headless", specifier = ">=4.10.0.0,<5" },
     { name = "plotly", specifier = ">=6.0.0,<7" },
+    { name = "stable-baselines3", specifier = ">=2.7,<3" },
     { name = "torch", marker = "sys_platform != 'linux'", specifier = ">=2.6.0,<3" },
     { name = "torch", marker = "sys_platform == 'linux'", specifier = ">=2.6.0,<3", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", marker = "sys_platform != 'linux'", specifier = ">=0.21.0,<1" },
@@ -1565,6 +1567,22 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d9/38/e12680bbe6b4f8f3d17adcaf38d26850aa756c85cf4a80e79fc12a018fe8/soupsieve-2.9.1.tar.gz", hash = "sha256:c33e6605bbc71dd628b00c632d58ae607c22bade247e52553928f83bbb75b4ba", size = 122261, upload-time = "2026-07-21T16:57:17.452Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0f/2c/437fe806897c2d6cfdc3ee43a18da8bf8e568530a4ae9bac781541ca9896/soupsieve-2.9.1-py3-none-any.whl", hash = "sha256:4f4477399246b7a0c720a88ca2454b11cd6bb9ae4c9d170140786e916776c14c", size = 37404, upload-time = "2026-07-21T16:57:16.421Z" },
+]
+
+[[package]]
+name = "stable-baselines3"
+version = "2.9.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cloudpickle" },
+    { name = "gymnasium" },
+    { name = "numpy" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ab/86/fb86bf20bc2321d14a5a40221119043186efaebe2490e1038d17e4a4783e/stable_baselines3-2.9.2.tar.gz", hash = "sha256:8af267e9513343f481b3f0680b7740ad79a746873db24f18a9fb2edcbd9a2df7", size = 223761, upload-time = "2026-10-26T09:35:30.876Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b0/c0/d4f648cbfb1efce94ad0dd0db3487e3e8f2bd572f035cfc0fc1b8a070cfe/stable_baselines3-2.9.2-py3-none-any.whl", hash = "sha256:0b7db1789bea31d43b3e9be4f88abf639549b587f2bf2a2461ee9d3d77c68e96", size = 188412, upload-time = "2026-10-26T09:35:28.923Z" },
 ]
 
 [[package]]

@@ -167,6 +167,14 @@ The included runtime stack is:
 - `opencv-python-headless` (the `cv2` API without GUI dependencies, suitable for notebooks and
   containers);
 - `plotly`, `matplotlib`, and `numpy`.
+- `stable-baselines3` for future RL training and environment interface checks.
+
+The first mechanics-only stage of the homicidal-chauffeur game is documented in
+[`RL/README_chauffeur.md`](RL/README_chauffeur.md). Run its reproducible episode with:
+
+```bash
+uv run --project .python_env --locked python -m RL.chauffeur_demo
+```
 
 Run the original MattChanTK 5x5 sample maze with:
 
@@ -286,8 +294,14 @@ default. See [`docs/hardware.md`](docs/hardware.md) for scoped Compose override 
 Fast host-side checks do not require a running container or the ML environment:
 
 ```bash
-python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s tests -p test_c.py -v
 ./c doctor
+```
+
+The game mechanics tests require the ML environment:
+
+```bash
+uv run --project .python_env --locked python -m unittest discover -s tests -v
 ```
 
 After `./c native-sync`, verify every requested library and the active accelerator with:
