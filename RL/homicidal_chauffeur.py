@@ -80,9 +80,9 @@ def _capture_fraction(coefficients: NDArray[np.float64], beta: float) -> float |
     radius_squared[0] -= beta**2
     roots = polynomial.polyroots(radius_squared)
     candidates = [
-        float(np.clip(root.real, 0, 1))
+        float(root.real)
         for root in roots
-        if abs(root.imag) <= 1e-8 and 0 < root.real <= 1 + 1e-10
+        if abs(root.imag) <= 1e-8 and 0 < root.real <= 1
     ]
     # Tangencies are double roots: roundoff can move them off the real axis.
     # Stationary points of squared distance remain well-conditioned there.
@@ -94,7 +94,14 @@ def _capture_fraction(coefficients: NDArray[np.float64], beta: float) -> float |
             and abs(polynomial.polyval(root.real, radius_squared)) <= tolerance
         ):
             candidates.append(float(root.real))
-    return min(candidates) if candidates else None
+    if candidates:
+        return min(candidates)
+    # A root at the endpoint can round above 1. Check the endpoint itself
+    # with a roundoff allowance in distance, independent of the step length.
+    endpoint = polynomial.polyval(1.0, coefficients)
+    if np.linalg.norm(endpoint) - beta <= 64 * np.finfo(np.float64).eps * beta:
+        return 1.0
+    return None
 
 
 class HomicidalChauffeurEnv(gym.Env[Observation, NDArray[np.float32]]):

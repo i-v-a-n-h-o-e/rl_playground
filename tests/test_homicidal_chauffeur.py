@@ -73,6 +73,36 @@ class ChauffeurTests(unittest.TestCase):
         self.assertFalse(last["truncated"])
         self.assertEqual(last["termination_reason"], "capture")
 
+    def test_straight_motion_and_clockwise_heading_signs(self) -> None:
+        env = HomicidalChauffeurEnv(GameConfig(dt=0.5))
+        for psi, x in ((np.pi / 2, 0.25), (-np.pi / 2, -0.25)):
+            with self.subTest(psi=psi):
+                env.reset(options={"state": (0, -1)})
+                obs, _, terminated, truncated, info = env.step_controls(0, psi)
+                r = np.hypot(x, -1.5)
+                np.testing.assert_allclose(info["state"], [x, -1.5], rtol=0, atol=1e-14)
+                np.testing.assert_allclose(obs, [x, -1.5, r, x / r, -1.5 / r], atol=1e-7)
+                self.assertEqual((terminated, truncated), (False, False))
+
+    def test_maximum_turn_and_step_halving(self) -> None:
+        # With psi=0, the relative orbit is a unit circle around (phi/2, 0).
+        # After a quarter turn from the top, it reaches (-phi/2, 0).
+        for phi in (1, -1):
+            with self.subTest(phi=phi):
+                errors = []
+                for dt in (0.05, 0.025):
+                    trace = run_episode(
+                        GameConfig(dt=dt, horizon=np.pi / 2), (phi / 2, 1), 42, phi, 0
+                    )
+                    times = np.array([row["time"] for row in trace])
+                    states = np.array([row["state"] for row in trace])
+                    exact = np.column_stack((phi * (0.5 - np.sin(times)), np.cos(times)))
+                    errors.append(np.max(np.linalg.norm(states - exact, axis=1)))
+                    self.assertEqual(trace[-1]["termination_reason"], "time_limit")
+                    self.assertEqual(times[-1], np.pi / 2)
+                    np.testing.assert_allclose(states[-1], [-phi / 2, 0], rtol=0, atol=1e-7)
+                self.assertLessEqual(errors[1], errors[0] / 10 + 1e-12)
+
     def test_capture_between_step_endpoints(self) -> None:
         env = HomicidalChauffeurEnv(GameConfig(dt=0.5, horizon=1.0))
         env.reset(options={"state": (0, 0.4)})
@@ -83,12 +113,55 @@ class ChauffeurTests(unittest.TestCase):
         self.assertAlmostEqual(info["elapsed_time"], (0.4 - 0.3) / 1.5)
         self.assertLessEqual(info["distance"], env.config.beta)
 
+    def test_curved_capture_between_step_endpoints(self) -> None:
+        env = HomicidalChauffeurEnv(GameConfig(dt=0.5, horizon=1.0))
+        # The circle centered at (0.5, 0) passes closest to the origin
+        # at t=0.25. Both endpoints t=0 and t=0.5 are outside the disk.
+        radius = 0.79
+        start = (0.5 - radius * np.cos(0.25), radius * np.sin(0.25))
+        self.assertGreater(np.linalg.norm(start), env.config.beta)
+        angle = np.arccos((0.5**2 + radius**2 - env.config.beta**2) / radius)
+        expected_time = 0.25 - angle
+        self.assertLess(0.25 + angle, env.config.dt)
+        env.reset(options={"state": start})
+        _, _, terminated, truncated, info = env.step_controls(1, 0)
+        self.assertEqual((terminated, truncated), (True, False))
+        self.assertEqual(info["termination_reason"], "capture")
+        self.assertAlmostEqual(info["elapsed_time"], expected_time, delta=2e-6)
+        self.assertAlmostEqual(info["distance"], env.config.beta, places=14)
+
     def test_capture_has_priority_at_the_horizon(self) -> None:
         env = HomicidalChauffeurEnv(GameConfig(dt=0.05, horizon=0.05))
         env.reset(options={"state": (0, 0.325)})
         _, _, terminated, truncated, info = env.step_controls(0, 0)
         self.assertEqual((terminated, truncated), (True, False))
         self.assertEqual(info["termination_reason"], "capture")
+        self.assertAlmostEqual(info["elapsed_time"], env.config.horizon, places=14)
+        self.assertAlmostEqual(info["distance"], env.config.beta, places=14)
+
+    def test_capture_after_horizon_is_excluded(self) -> None:
+        config = GameConfig(beta=0.25, dt=0.5, horizon=0.25)
+        env = HomicidalChauffeurEnv(config)
+        for delay in (0.01, 2e-12):
+            with self.subTest(delay=delay):
+                # With closing speed 0.5, contact would occur at horizon + delay.
+                start = config.beta + 0.5 * (config.horizon + delay)
+                env.reset(options={"state": (0, start)})
+                _, _, terminated, truncated, info = env.step_controls(0, 0)
+                self.assertEqual((terminated, truncated), (False, True))
+                self.assertEqual(info["termination_reason"], "time_limit")
+                self.assertEqual(info["elapsed_time"], config.horizon)
+                self.assertEqual(info["dt"], config.horizon)
+                self.assertGreater(info["distance"], config.beta)
+
+    def test_initial_state_on_or_inside_capture_disk_is_rejected(self) -> None:
+        env = HomicidalChauffeurEnv()
+        for state in ((0, 0), (0.1, -0.1), (0, env.config.beta)):
+            with (
+                self.subTest(state=state),
+                self.assertRaisesRegex(ValueError, "outside the capture circle"),
+            ):
+                env.reset(options={"state": state})
 
     def test_tangent_contact_counts_as_capture(self) -> None:
         env = HomicidalChauffeurEnv()
@@ -177,7 +250,7 @@ class ChauffeurTests(unittest.TestCase):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 GameConfig(**kwargs)
         env = HomicidalChauffeurEnv()
-        for state in ((0, 0), (0, 0.3), (np.inf, 1), (1,), ((1, 2),)):
+        for state in ((np.inf, 1), (1,), ((1, 2),)):
             with self.subTest(state=state), self.assertRaises(ValueError):
                 env.reset(options={"state": state})
 
