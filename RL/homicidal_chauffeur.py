@@ -71,7 +71,9 @@ def _rk4_path(
     return coefficients
 
 
-def _capture_fraction(coefficients: NDArray[np.float64], beta: float) -> float | None:
+def _capture_fraction(
+    coefficients: NDArray[np.float64], beta: float, endpoint_roundoff: float
+) -> float | None:
     """First intersection with the capture circle along the numerical RK4 path.
 
     Checking the whole path also catches entry and exit within a single step.
@@ -101,10 +103,9 @@ def _capture_fraction(coefficients: NDArray[np.float64], beta: float) -> float |
             candidates.append(float(root.real))
     if candidates:
         return min(candidates)
-    # A root at the endpoint can round above 1. Check the endpoint itself
-    # with a roundoff allowance in distance, independent of the step length.
+    # A root at the endpoint can round above 1. Check the endpoint itself.
     endpoint = polynomial.polyval(1.0, coefficients)
-    if np.linalg.norm(endpoint) - beta <= 64 * np.finfo(np.float64).eps * beta:
+    if np.linalg.norm(endpoint) - beta <= endpoint_roundoff:
         return 1.0
     return None
 
@@ -187,9 +188,10 @@ class HomicidalChauffeurEnv(gym.Env[Observation, NDArray[np.float32]]):
         return np.array([x, y, r, x / r, y / r], dtype=np.float32)
 
     def _info(self) -> dict[str, Any]:
+        state = self.state
         return {
-            "state": self.state,
-            "distance": float(np.linalg.norm(self.state)),
+            "state": state,
+            "distance": float(np.hypot(*state)),
             "elapsed_time": self.elapsed_time,
             "step_count": self.step_count,
             "termination_reason": self.termination_reason,
@@ -260,9 +262,16 @@ class HomicidalChauffeurEnv(gym.Env[Observation, NDArray[np.float32]]):
         state = self.state
         coefficients = _rk4_path(state, phi, psi, self.config.gamma, dt)
         # Radial speed is bounded by 1+gamma; distant states cannot be captured.
+        radial_speed = 1 + self.config.gamma
+        beta = self.config.beta
         capture = None
-        if np.linalg.norm(state) - (1 + self.config.gamma) * dt <= self.config.beta:
-            capture = _capture_fraction(coefficients, self.config.beta)
+        horizon_roundoff = 0.0
+        if at_horizon:
+            # Earlier steps accumulate roundoff on the scale of the distance traveled.
+            horizon_roundoff = 64 * np.finfo(np.float64).eps * radial_speed * self.elapsed_time
+        if np.linalg.norm(state) - radial_speed * dt <= beta + horizon_roundoff:
+            endpoint_roundoff = max(64 * np.finfo(np.float64).eps * beta, horizon_roundoff)
+            capture = _capture_fraction(coefficients, beta, endpoint_roundoff)
         axis = None
         if stop_at_positive_axis:
             axis = _positive_axis_fraction(coefficients, self.config.beta)
