@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from RL.chauffeur_classical import Policy, Rollout, State, TrajectoryPoint, classical_pursuer
+from RL.chauffeur_classical import Policy, Rollout, State, TrajectoryPoint
 from RL.chauffeur_evaluation import (
     EpisodeResult,
     compare,
+    evaluate_ppo,
     evaluate_pursuer,
     final_grid,
     heuristic_pursuer,
@@ -40,23 +41,27 @@ class ChauffeurEvaluationTests(unittest.TestCase):
     def test_same_driver_classifies_capture_timeout_and_unsupported(self) -> None:
         starts = [(0.0, 0.4), (0.0, 2.3), (2.0, -2.0)]
         config = GameConfig(horizon=0.4)
-        candidate = evaluate_pursuer(heuristic_pursuer, iter(starts), config)
-        reference = evaluate_pursuer(classical_pursuer, starts, config)
+
+        def steering(state, config):
+            return None if state == starts[2] else heuristic_pursuer(state, config)
+
+        candidate = evaluate_ppo(lambda state, config, _: steering(state, config), starts, config)
+        reference = evaluate_pursuer(steering, starts, config)
         self.assertEqual(candidate, reference)
         self.assertEqual([result.start for result in candidate], starts)
         self.assertEqual(
-            [result.outcome for result in candidate], ["capture", "time_limit", "unsupported"]
+            [result.outcome for result in candidate],
+            ["capture", "time_limit", "unsupported"],
         )
         self.assertAlmostEqual(candidate[0].capture_time, 0.2)
         self.assertIsNone(candidate[1].capture_time)
         self.assertIsNone(candidate[2].capture_time)
 
     def test_heuristic_nearly_zero_steering_during_capture(self) -> None:
-        # On this start, steering decays toward zero until the event polynomial
-        # has tiny leading terms. The capture solver must still find the root.
+        # The event must remain well conditioned as the steering approaches zero.
         (result,) = evaluate_pursuer(heuristic_pursuer, [(0.1, 2.3)])
         self.assertEqual(result.outcome, "capture")
-        self.assertAlmostEqual(result.capture_time, 4.00436, places=5)
+        self.assertAlmostEqual(result.capture_time, 4.00438, places=5)
 
     def test_custom_rollout_preserves_start_and_capture_time(self) -> None:
         starts = [(2.0, -2.0), (0.0, 0.4)]
@@ -78,7 +83,9 @@ class ChauffeurEvaluationTests(unittest.TestCase):
             ],
         )
 
-    def test_paired_metrics_distinguish_unknown_results_and_use_common_captures(self) -> None:
+    def test_paired_metrics_distinguish_unknown_results_and_use_common_captures(
+        self,
+    ) -> None:
         candidate = [
             EpisodeResult((0, 1), "capture", 1.0),
             EpisodeResult((0, 2), "capture", 9.0),

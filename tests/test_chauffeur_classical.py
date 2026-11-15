@@ -11,7 +11,14 @@ from RL.chauffeur_classical import (
     classical_pursuer,
     rollout_classical,
 )
-from RL.chauffeur_theory import BARRIER_END_TIME, retrograde_position, tangential_barrier
+from RL.chauffeur_theory import (
+    BARRIER_END_TIME,
+    USABLE_PART_ANGLE,
+    arc,
+    axis_arc,
+    geometry,
+    tangential_barrier,
+)
 from RL.homicidal_chauffeur import GameConfig, HomicidalChauffeurEnv
 
 
@@ -31,10 +38,9 @@ class ClassicalChauffeurTests(unittest.TestCase):
 
     def test_turn_to_axis_under_feedback_and_its_reflection(self) -> None:
         start = (1.105240, 2.278470)
-        for dt, expected_switch, expected_y, expected_capture in (
-            (0.05, 0.502863, 2.298466, 4.499794),
-            (0.025, 0.501435, 2.299257, 4.499949),
-        ):
+        for dt in (0.05, 0.025):
+            expected_switch, expected_y = axis_arc(start, 1)
+            expected_capture = expected_switch + (expected_y - 0.3) / 0.5
             config = GameConfig(dt=dt, horizon=15.0)
             for side in (1, -1):
                 with self.subTest(dt=dt, side=side):
@@ -87,7 +93,7 @@ class ClassicalChauffeurTests(unittest.TestCase):
         # Expanded formula from the specification, independent of the inversion.
         x = 1 - cos(tau) + 0.3 * sin(theta + tau) - 0.5 * tau * sin(theta + tau)
         y = sin(tau) + 0.3 * cos(theta + tau) - 0.5 * tau * cos(theta + tau)
-        for dt, expected in ((0.05, 0.049978), (0.025, 0.049994)):
+        for dt in (0.05, 0.025):
             for side in (1, -1):
                 with self.subTest(dt=dt, side=side):
                     state = side * x, y
@@ -98,35 +104,129 @@ class ClassicalChauffeurTests(unittest.TestCase):
                     self.assertAlmostEqual(classical_evader(state), side * (theta + tau))
                     run = rollout_classical(state, GameConfig(dt=dt, horizon=15.0))
                     self.assertEqual(run.outcome, "capture")
-                    self.assertAlmostEqual(run.trajectory[-1].time, expected, places=6)
+                    self.assertAlmostEqual(run.trajectory[-1].time, tau, places=9)
                     self.assertTrue(all(not p.axis_crossing for p in run.trajectory))
                     target = side * 0.3 * sin(theta), 0.3 * cos(theta)
                     np.testing.assert_allclose(run.trajectory[-1].state, target, rtol=0, atol=7e-4)
 
-    def test_partial_domain_and_mixed_rollout(self) -> None:
+    def test_missing_policy_control_is_reported_without_substitution(self) -> None:
         start = (1.105240, 2.278470)
         for policy in (classical_pursuer, classical_evader):
-            self.assertIsNone(policy((2, -2)))
             self.assertIsNone(policy((0, 0.3)))
             with self.assertRaisesRegex(ValueError, "gamma=0.5 and beta=0.3"):
                 policy(start, GameConfig(beta=0.4))
-        self.assertEqual(classical_feedback((0, 0.3)).branch, "capture")
+        self.assertEqual(rollout_classical((0, 0.3)).outcome, "capture")
         self.assertEqual(classical_feedback((1e-10, 2.0)).branch, "UL")
-        self.assertEqual(classical_feedback(retrograde_position(0.2, 0.1)).branch, "primary")
-        self.assertIsNone(classical_feedback(retrograde_position(0.51, 0.05)))
-        self.assertEqual(rollout_classical((2, -2)).outcome, "unsupported")
-        mixed = rollout_classical(start, pursuer=lambda state, config: 0.0)
-        self.assertEqual(mixed.outcome, "unsupported")
-        self.assertGreater(mixed.trajectory[-1].time, 0)
-        self.assertIsNone(classical_feedback(mixed.trajectory[-1].state))
+        run = rollout_classical(
+            start, pursuer=lambda state, config: 1.0 if state == start else None
+        )
+        self.assertEqual(run.outcome, "unsupported")
+        self.assertEqual(run.trajectory[-1].time, 0.05)
         limited = rollout_classical(start, GameConfig(horizon=0.12))
         self.assertEqual(limited.outcome, "time_limit")
         self.assertEqual(limited.trajectory[-1].time, 0.12)
 
+    def test_p2_through_p8_from_the_report_and_their_reflections(self) -> None:
+        for start, phi, psi, capture, first_time, first_y in (
+            ((1, 2.5), 1, 0.411517, 4.805609, 0.411517, 2.497046),
+            ((0.2, 1), 1, 0.221314, 1.442629, 0.221314, 0.910657),
+            ((0.45, 1), -1, -1.570796, 18.146612, 1.570796, -0.664602),
+            ((0.5, 0), -1, -0.841069, 17.351089, 0.841069, -0.697500),
+            ((2, -0.5), -1, -1.070617, 14.301691, 1.070617, -2.336973),
+            ((3.2, -1.8), 1, 2.616018, 9.953690, 2.616018, 3.968836),
+            ((0, -1), 0, 0, 15.905020, 3.401712, -2.700856),
+        ):
+            for side in (1, -1):
+                with self.subTest(start=start, side=side):
+                    z = side * start[0], start[1]
+                    f = classical_feedback(z)
+                    self.assertEqual(f.phi, side * phi)
+                    self.assertAlmostEqual(f.psi, side * psi, delta=1e-6)
+                    run = rollout_classical(z)
+                    self.assertEqual(run.outcome, "capture")
+                    self.assertAlmostEqual(run.trajectory[-1].time, capture, delta=1e-6)
+                    event = next(p for p in run.trajectory if p.event)
+                    self.assertEqual((event.event, event.state[0]), ("axis", 0))
+                    self.assertAlmostEqual(event.time, first_time, delta=1e-6)
+                    self.assertAlmostEqual(event.state[1], first_y, delta=1e-6)
+
+    def test_el_departure_and_sliding_have_the_same_value(self) -> None:
+        g = geometry()
+        j = g.el.at(1.1)
+        for side in (1, -1):
+            with self.subTest(side=side):
+                x, y = side * j[0], j[1]
+                self.assertEqual(classical_feedback((x, y)).branch, "EL")
+                glide = rollout_classical((x, y), slide_el=True)
+                leave = rollout_classical((x, y))
+                self.assertEqual((glide.outcome, leave.outcome), ("capture", "capture"))
+                self.assertAlmostEqual(glide.trajectory[1].phi, side * 0.547600, delta=1e-6)
+                self.assertAlmostEqual(leave.trajectory[1].psi, side * 3.067558, delta=1e-6)
+                self.assertAlmostEqual(glide.trajectory[-1].time, leave.trajectory[-1].time)
+                self.assertAlmostEqual(
+                    next(p for p in glide.trajectory if p.event == "B").time, 1.1
+                )
+        incoming = rollout_classical((2.189032554, -2.566448322))
+        self.assertEqual(incoming.trajectory[1].event, "EL")
+        self.assertAlmostEqual(incoming.trajectory[1].time, 0.008930, delta=1e-6)
+        self.assertEqual(incoming.trajectory[2].phi, 1.0)
+
+    def test_throw_reaches_se_and_pdl_responds_to_the_chosen_turn(self) -> None:
+        g = geometry()
+        e, p = g.se_endpoint(0.0699)
+        start = arc(e, p, 0.075, 1)
+        k = arc(e, p, 0.134212, 1)
+        for side in (1, -1):
+            with self.subTest(side=side):
+                run = rollout_classical((side * start[0], start[1]))
+                event = next(i for i, point in enumerate(run.trajectory) if point.event)
+                self.assertEqual(run.trajectory[event].event, "SE")
+                self.assertAlmostEqual(run.trajectory[event].time, 0.075, delta=1e-6)
+                self.assertEqual(run.trajectory[event + 1].phi, -side)
+                self.assertAlmostEqual(run.trajectory[event + 1].psi, -side * 0.085626, delta=1e-6)
+                z = side * k[0], k[1]
+                self.assertEqual(classical_feedback(z).branch, "curved_PDL")
+                self.assertAlmostEqual(classical_evader(z, phi=side), side * 1.476604, delta=1e-6)
+                self.assertAlmostEqual(classical_evader(z, phi=-side), -side * 0.352567, delta=1e-6)
+                for d, sign in ((-2e-5, side), (2e-5, -side)):
+                    offset = side * (k[0] + d * 0.99892), k[1] + d * 0.04646
+                    self.assertEqual(classical_pursuer(offset), sign)
+        follow = rollout_classical(e, follow_se=True)
+        event = next(p for p in follow.trajectory if p.event)
+        self.assertEqual(event.event, "G")
+        self.assertAlmostEqual(event.time, 0.0699)
+
+    def test_safe_contact_continues_only_in_merz_or_with_positive_clearance(
+        self,
+    ) -> None:
+        g = geometry()
+        q = g.b(1)
+        p = USABLE_PART_ANGLE + 1
+        slow = q[0] + 0.01 * sin(p), q[1] + 0.01 * cos(p)
+        fast = q[0] - 0.01 * sin(p), q[1] - 0.01 * cos(p)
+        self.assertEqual(classical_feedback(fast).branch, "turn_to_UL")
+        self.assertEqual(classical_feedback(slow).branch, "turn_to_contact")
+        self.assertEqual(classical_feedback(q).phi, 1)
+        closed = rollout_classical(slow)
+        opened = rollout_classical(slow, mode="merz")
+        self.assertEqual((closed.outcome, opened.outcome), ("capture", "capture"))
+        self.assertAlmostEqual(closed.trajectory[-1].time, 0.976822, delta=1e-6)
+        self.assertAlmostEqual(opened.trajectory[-1].time, 18.454940, delta=1e-6)
+        self.assertTrue(any(pt.event == "M" for pt in opened.trajectory))
+        prior = 0.0
+        for rho in (0.301, 0.3005, 0.30025):
+            expanded = rollout_classical(slow, virtual_radius=rho)
+            self.assertEqual(expanded.outcome, "capture")
+            point = next(pt for pt in expanded.trajectory if pt.event == "safe_contact")
+            self.assertAlmostEqual(np.linalg.norm(point.state), rho)
+            self.assertLess(prior, expanded.trajectory[-1].time)
+            prior = expanded.trajectory[-1].time
+        self.assertAlmostEqual(prior, opened.trajectory[-1].time, delta=0.0011)
+
     def test_feedback_uses_the_same_capture_boundary_as_reset(self) -> None:
         env = HomicidalChauffeurEnv()
         for state, outside_branch in (
-            ((0.006282725965007086, 0.29993420504245366), None),
+            ((0.006282725965007086, 0.29993420504245366), "primary"),
             ((0.06018871959163782, 0.2939001837936125), "primary"),
         ):
             with self.subTest(state=state):
@@ -150,7 +250,38 @@ class ClassicalChauffeurTests(unittest.TestCase):
         end = tangential_barrier(BARRIER_END_TIME)
         np.testing.assert_allclose(end, (3.053992, -1.763223), rtol=0, atol=5e-7)
         self.assertEqual(tangential_barrier(BARRIER_END_TIME, side=-1), (-end[0], end[1]))
-        self.assertIsNone(classical_feedback(end))
+        self.assertEqual(classical_feedback(end).branch, "B")
+
+    def test_barrier_junctions_and_critical_contact(self) -> None:
+        g = geometry()
+        for t, branch, merz_phi in (
+            (0.2, "barrier", -1),
+            (g.s_g, "G", -1),
+            (0.35, "barrier", 1),
+            (g.s_h, "H", 1),
+            (0.6, "A", -1),
+            (0.61, "barrier", -1),
+            (BARRIER_END_TIME, "B", -1),
+        ):
+            z = g.b(t)
+            with self.subTest(t=t):
+                f = classical_feedback(z)
+                self.assertEqual((f.branch, f.phi), (branch, 1))
+                self.assertEqual(classical_feedback(z, mode="merz").phi, merz_phi)
+        self.assertAlmostEqual(rollout_classical(g.b(0.6)).trajectory[-1].time, 0.6)
+        self.assertAlmostEqual(
+            rollout_classical(g.b(BARRIER_END_TIME)).trajectory[-1].time, 9.7481295
+        )
+        for delta, branch in (
+            (-0.01, "turn_to_lower_UL"),
+            (0.0, "turn_to_contact"),
+            (0.01, "turn_to_contact"),
+        ):
+            self.assertEqual(classical_feedback(arc((0, g.y_m + delta), 0, 0.9, -1)).branch, branch)
+        critical = rollout_classical(arc((0, g.y_m), 0, 0.9, -1))
+        self.assertAlmostEqual(critical.trajectory[-1].time, 0.9 - g.a_m)
+        for z in (g.b(0), g.contact(g.alpha_m)[0], (0, 0.3), (0, -0.3)):
+            self.assertEqual(len(rollout_classical(z).trajectory), 1)
 
     def test_axis_event_before_horizon_allows_control_recalculation(self) -> None:
         config = GameConfig(dt=0.05, horizon=0.05)

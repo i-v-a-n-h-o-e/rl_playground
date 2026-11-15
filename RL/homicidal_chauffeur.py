@@ -219,7 +219,10 @@ class HomicidalChauffeurEnv(gym.Env[Observation, NDArray[np.float32]]):
             state = np.array(options["state"], dtype=np.float64, copy=True)
             if state.shape != (2,) or not np.all(np.isfinite(state)):
                 raise ValueError("Initial state must be a finite vector of shape (2,)")
-            if is_captured(state, self.config.beta):
+            allow_contact = options.get("allow_contact", False)
+            if is_captured(state, self.config.beta) and not (
+                allow_contact and np.hypot(*state) >= self.config.beta - 1e-14
+            ):
                 raise ValueError("Initial state must be outside the capture circle")
         else:
             while True:
@@ -287,13 +290,23 @@ class HomicidalChauffeurEnv(gym.Env[Observation, NDArray[np.float32]]):
         terminated = capture is not None and (axis is None or capture <= axis)
         axis_crossing = axis is not None and not terminated
         fraction = min(event for event in (capture, axis, 1.0) if event is not None)
-        self._state = np.polynomial.polynomial.polyval(fraction, coefficients)
+        endpoint = np.polynomial.polynomial.polyval(fraction, coefficients)
         if axis_crossing:
-            self._state[0] = 0.0
+            endpoint[0] = 0.0
+        return self._finish_step(
+            endpoint, phi, psi, dt * fraction, terminated,
+            "axis" if axis_crossing else None, at_horizon and fraction == 1.0,
+        )
+
+    def _finish_step(
+        self, endpoint: ArrayLike, phi: float, psi: float, dt: float, terminated: bool,
+        event: str | None, at_horizon: bool,
+    ) -> Transition:
+        self._state = np.asarray(endpoint, dtype=np.float64)
         self.elapsed_time = (
             self.config.horizon
-            if at_horizon and fraction == 1.0
-            else self.elapsed_time + dt * fraction
+            if at_horizon
+            else self.elapsed_time + dt
         )
         truncated = self.elapsed_time >= self.config.horizon and not terminated
         self.step_count += 1
@@ -304,5 +317,5 @@ class HomicidalChauffeurEnv(gym.Env[Observation, NDArray[np.float32]]):
         elif truncated:
             self.termination_reason = "time_limit"
         info = self._info()
-        info.update(phi=phi, psi=psi, dt=dt * fraction, axis_crossing=axis_crossing)
+        info.update(phi=phi, psi=psi, dt=dt, event=event, axis_crossing=event == "axis")
         return self._observation(), 0.0, terminated, truncated, info
