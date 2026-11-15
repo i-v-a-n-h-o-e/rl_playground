@@ -144,11 +144,14 @@ def compare(candidate: Sequence[EpisodeResult], reference: Sequence[EpisodeResul
     return summary
 
 
-def _save_maps(
+def save_maps(
     target: Path,
-    heuristic: Sequence[EpisodeResult],
-    classical: Sequence[EpisodeResult],
+    candidate: Sequence[EpisodeResult],
+    reference: Sequence[EpisodeResult],
     config: GameConfig,
+    *,
+    labels: tuple[str, str] = ("Heuristic", "Classical"),
+    opponent: str = "the classical evader",
 ) -> None:
     from matplotlib import pyplot as plt
     from matplotlib.colors import ListedColormap
@@ -165,7 +168,7 @@ def _save_maps(
     codes = {label: index for index, label in enumerate(colors)}
     size = GRID_MAX - GRID_MIN + 1
     maps = np.zeros((3, size, size), dtype=int)
-    for a, b in zip(heuristic, classical, strict=True):
+    for a, b in zip(candidate, reference, strict=True):
         x, y = a.start
         col, row = round(x * GRID_SCALE) - GRID_MIN, round(y * GRID_SCALE) - GRID_MIN
         if a.outcome == b.outcome:
@@ -179,13 +182,13 @@ def _save_maps(
     fig, axes = plt.subplots(1, 3, figsize=(11, 5), sharex=True, sharey=True)
     fig.subplots_adjust(left=0.065, right=0.98, bottom=0.25, top=0.84, wspace=0.12)
     fig.suptitle(
-        f"Capture by T = {config.horizon:g} against the classical evader",
+        f"Capture by T = {config.horizon:g} against {opponent}",
         fontsize=17,
         fontweight="bold",
     )
     step = 1 / GRID_SCALE
     lower, upper = GRID_MIN / GRID_SCALE - step / 2, GRID_MAX / GRID_SCALE + step / 2
-    for ax, values, title in zip(axes, maps, ("Heuristic", "Classical", "Paired outcomes")):
+    for ax, values, title in zip(axes, maps, (*labels, "Paired outcomes")):
         ax.imshow(
             values,
             origin="lower",
@@ -197,7 +200,7 @@ def _save_maps(
         )
         ax.set(title=title, xlabel="x", xticks=range(-4, 5, 2), yticks=range(-4, 5, 2))
     axes[0].set_ylabel("y")
-    labels = {
+    legend_labels = {
         "outside evaluation": "Inside capture disk",
         "capture": "Capture",
         "time_limit": "Time limit",
@@ -207,7 +210,7 @@ def _save_maps(
     }
     fig.legend(
         handles=[
-            Patch(facecolor=color, edgecolor="#75808c", label=labels[label])
+            Patch(facecolor=color, edgecolor="#75808c", label=legend_labels[label])
             for label, color in colors.items()
         ],
         loc="lower center",
@@ -258,7 +261,7 @@ def main() -> None:
         "metrics": summary,
     }
     (output / "summary.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    _save_maps(output / "maps.png", heuristic, classical, config)
+    save_maps(output / "maps.png", heuristic, classical, config)
     print(f"Evaluated {len(starts)} starts per policy. Results saved to {output}")
 
 
