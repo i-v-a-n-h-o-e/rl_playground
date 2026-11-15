@@ -6,7 +6,7 @@ import argparse
 import csv
 import json
 from collections import Counter
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from math import atan2
 from pathlib import Path
@@ -78,16 +78,32 @@ def evaluate_pursuer(
     pass a rollout accepting the pursuer, start and config and returning the
     trajectory from reset. Use the same rollout for every compared policy.
     """
-    results = []
-    for start in starts:
-        run = (
+    return summarize_rollouts(
+        (
             rollout_classical(start, config, pursuer=pursuer)
             if rollout is None
             else rollout(pursuer, start, config)
         )
+        for start in starts
+    )
+
+
+def summarize_rollouts(runs: Iterable[Rollout]) -> list[EpisodeResult]:
+    results = []
+    for run in runs:
         capture_time = run.trajectory[-1].time if run.outcome == "capture" else None
         results.append(EpisodeResult(run.trajectory[0].state, run.outcome, capture_time))
     return results
+
+
+def save_episodes(target: Path, episodes: Mapping[str, Iterable[EpisodeResult]]) -> None:
+    with target.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(("pursuer", "x", "y", "outcome", "capture_time"))
+        for name, results in episodes.items():
+            writer.writerows(
+                (name, *result.start, result.outcome, result.capture_time) for result in results
+            )
 
 
 def compare(candidate: Sequence[EpisodeResult], reference: Sequence[EpisodeResult]) -> dict:
@@ -236,13 +252,7 @@ def main() -> None:
     classical = evaluate_pursuer(classical_pursuer, starts, config)
     summary = compare(heuristic, classical)
     output.mkdir(parents=True, exist_ok=True)
-    with (output / "episodes.csv").open("w", encoding="utf-8", newline="") as file:
-        writer = csv.writer(file)
-        writer.writerow(("pursuer", "x", "y", "outcome", "capture_time"))
-        for name, results in (("heuristic", heuristic), ("classical", classical)):
-            writer.writerows(
-                (name, *result.start, result.outcome, result.capture_time) for result in results
-            )
+    save_episodes(output / "episodes.csv", {"heuristic": heuristic, "classical": classical})
     with (output / "tuning_starts.csv").open("w", encoding="utf-8", newline="") as file:
         writer = csv.writer(file)
         writer.writerow(("x", "y"))

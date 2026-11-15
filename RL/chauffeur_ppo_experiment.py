@@ -6,6 +6,7 @@ import argparse
 import csv
 import json
 import platform
+from collections.abc import Callable
 from dataclasses import asdict
 from functools import partial
 from pathlib import Path
@@ -31,19 +32,21 @@ from RL.chauffeur_classical import (
 from RL.chauffeur_evaluation import (
     TUNING_SEED,
     compare,
-    evaluate_pursuer,
     final_grid,
     heuristic_pursuer,
+    save_episodes,
     save_maps,
+    summarize_rollouts,
     tuning_starts,
 )
 from RL.chauffeur_ppo import ChauffeurPPOEnv
-from RL.homicidal_chauffeur import GameConfig
+from RL.homicidal_chauffeur import GameConfig, Observation
 
 TRAIN_SEED = 17
 N_STEPS = 1024
 POLICY_LAYERS = [32, 32]
 BENCHMARKS = ((0.0, 2.3), (0.5, 0.0), (0.0, -1.0), (1.105240, 2.278470))
+RolloutPolicy = Callable[[State, GameConfig, Observation], float | None]
 
 
 def train(output: Path, steps: int) -> dict:
@@ -91,28 +94,32 @@ def train(output: Path, steps: int) -> dict:
     }
 
 
-def rollout_in_env(
-    pursuer: Policy, start: State, config: GameConfig, *, env: ChauffeurPPOEnv
-) -> Rollout:
-    _, info = env.reset(options={"state": start})
+def rollout_in_env(pursuer: RolloutPolicy, start: State, *, env: ChauffeurPPOEnv) -> Rollout:
+    observation, info = env.reset(options={"state": start})
     state = tuple(info["state"].tolist())
     trajectory = [TrajectoryPoint(0.0, state)]
     while True:
-        phi = pursuer(state, config)
+        phi = pursuer(state, env.config, observation)
         if phi is None:
             return Rollout("unsupported", tuple(trajectory))
-        _, _, captured, timed_out, info = env.step(np.array([phi], dtype=np.float32))
+        observation, _, captured, timed_out, info = env.step(np.array([phi], dtype=np.float32))
         state = tuple(info["state"].tolist())
         trajectory.append(TrajectoryPoint(info["elapsed_time"], state, info["phi"], info["psi"]))
         if captured or timed_out:
             return Rollout("capture" if captured else "time_limit", tuple(trajectory))
 
 
-def checkpoint_policy(model: PPO, env: ChauffeurPPOEnv) -> Policy:
-    def predict(_state: State, _config: GameConfig) -> float:
-        # The rollout owns this environment. Read its current scaled observation and clock.
-        action, _ = model.predict(env._observation(), deterministic=True)
+def checkpoint_policy(model: PPO) -> RolloutPolicy:
+    def predict(_state: State, _config: GameConfig, observation: Observation) -> float:
+        action, _ = model.predict(observation, deterministic=True)
         return float(action.item())
+
+    return predict
+
+
+def state_policy(policy: Policy) -> RolloutPolicy:
+    def predict(state: State, config: GameConfig, _observation: Observation) -> float | None:
+        return policy(state, config)
 
     return predict
 
@@ -123,14 +130,17 @@ def save_trajectories(output: Path, runs: dict[str, list[Rollout]]) -> None:
 
     colors = {"ppo": "#116f70", "heuristic": "#bf416d", "classical": "#324b70"}
     styles = {"ppo": "-", "heuristic": "--", "classical": ":"}
+    runs_by_start = {
+        name: {run.trajectory[0].state: run for run in rollouts} for name, rollouts in runs.items()
+    }
     fig, axes = plt.subplots(2, 2, figsize=(9, 8), layout="constrained")
     with (output / "trajectories.csv").open("w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         writer.writerow(("pursuer", "x0", "y0", "outcome", "time", "x", "y", "phi", "psi"))
-        for index, (ax, start) in enumerate(zip(axes.flat, BENCHMARKS, strict=True)):
+        for ax, start in zip(axes.flat, BENCHMARKS, strict=True):
             ax.add_patch(Circle((0, 0), DEFAULT_CONFIG.beta, fill=False, ls=":", color="#262626"))
-            for name, rollouts in runs.items():
-                run = rollouts[index]
+            for name, rollouts in runs_by_start.items():
+                run = rollouts[start]
                 writer.writerows(
                     (name, *start, run.outcome, point.time, *point.state, point.phi, point.psi)
                     for point in run.trajectory
@@ -151,32 +161,29 @@ def evaluate(output: Path) -> dict:
     env = ChauffeurPPOEnv(config)
     rollout = partial(rollout_in_env, env=env)
     model = PPO.load(output / "ppo.zip", device="cpu")
-    untrained = checkpoint_policy(PPO.load(output / "untrained.zip", device="cpu"), env)
+    untrained = checkpoint_policy(PPO.load(output / "untrained.zip", device="cpu"))
     policies = {
-        "ppo": checkpoint_policy(model, env),
-        "heuristic": heuristic_pursuer,
-        "classical": classical_pursuer,
+        "ppo": checkpoint_policy(model),
+        "heuristic": state_policy(heuristic_pursuer),
+        "classical": state_policy(classical_pursuer),
     }
     tuning = tuning_starts()
-    before = evaluate_pursuer(untrained, tuning, config, rollout=rollout)
-    after = evaluate_pursuer(policies["ppo"], tuning, config, rollout=rollout)
+    before = summarize_rollouts(rollout(untrained, start) for start in tuning)
+    after = summarize_rollouts(rollout(policies["ppo"], start) for start in tuning)
     print(f"Compared both checkpoints on {len(tuning)} tuning starts", flush=True)
 
     starts = final_grid()
     results = {}
-    with (output / "episodes.csv").open("w", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-        writer.writerow(("pursuer", "x", "y", "outcome", "capture_time"))
-        for name, pursuer in policies.items():
-            episodes = evaluate_pursuer(pursuer, starts, config, rollout=rollout)
-            results[name] = episodes
-            writer.writerows((name, *ep.start, ep.outcome, ep.capture_time) for ep in episodes)
-            print(f"Evaluated {name} on {len(episodes)} grid starts", flush=True)
+    for name, pursuer in policies.items():
+        episodes = summarize_rollouts(rollout(pursuer, start) for start in starts)
+        results[name] = episodes
+        print(f"Evaluated {name} on {len(episodes)} grid starts", flush=True)
+    save_episodes(output / "episodes.csv", results)
 
     save_trajectories(
         output,
         {
-            name: [rollout(pursuer, start, config) for start in BENCHMARKS]
+            name: [rollout(pursuer, start) for start in BENCHMARKS]
             for name, pursuer in policies.items()
         },
     )
