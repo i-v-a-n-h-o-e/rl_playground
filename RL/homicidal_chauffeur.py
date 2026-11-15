@@ -71,6 +71,15 @@ def _rk4_path(
     return coefficients
 
 
+def _event_roots(coefficients: NDArray[np.float64]) -> NDArray:
+    """Find roots for a step event parameterized by a fraction in [0, 1]."""
+    polynomial = np.polynomial.polynomial
+    # Near zero steering, trailing RK4 terms can be far below roundoff on
+    # [0, 1]. Remove them before polyroots divides by the leading coefficient.
+    tolerance = np.finfo(np.float64).eps * np.max(abs(coefficients))
+    return polynomial.polyroots(polynomial.polytrim(coefficients, tol=tolerance))
+
+
 def _capture_fraction(coefficients: NDArray[np.float64], beta: float) -> float | None:
     """First intersection with the capture circle along the numerical RK4 path.
 
@@ -83,7 +92,7 @@ def _capture_fraction(coefficients: NDArray[np.float64], beta: float) -> float |
         polynomial.polymul(coefficients[:, 1], coefficients[:, 1]),
     )
     radius_squared[0] -= beta**2
-    roots = polynomial.polyroots(radius_squared)
+    roots = _event_roots(radius_squared)
     candidates = [
         float(root.real)
         for root in roots
@@ -92,7 +101,7 @@ def _capture_fraction(coefficients: NDArray[np.float64], beta: float) -> float |
     # Tangencies are double roots: roundoff can move them off the real axis.
     # Stationary points of squared distance remain well-conditioned there.
     tolerance = 64 * np.finfo(np.float64).eps * max(beta**2, np.sum(abs(radius_squared)))
-    for root in polynomial.polyroots(polynomial.polyder(radius_squared)):
+    for root in _event_roots(polynomial.polyder(radius_squared)):
         if (
             abs(root.imag) <= 1e-8
             and 0 < root.real <= 1
@@ -117,7 +126,7 @@ def _positive_axis_fraction(coefficients: NDArray[np.float64], beta: float) -> f
     # separate monotone intervals.
     stationary = sorted(
         float(root.real)
-        for root in polynomial.polyroots(polynomial.polyder(x))
+        for root in _event_roots(polynomial.polyder(x))
         if root.imag == 0 and 0 < root.real < 1
     )
     roundoff = 64 * np.finfo(np.float64).eps
