@@ -6,7 +6,7 @@ import argparse
 import csv
 import json
 from collections import Counter
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from math import atan2
 from pathlib import Path
@@ -78,16 +78,32 @@ def evaluate_pursuer(
     pass a rollout accepting the pursuer, start and config and returning the
     trajectory from reset. Use the same rollout for every compared policy.
     """
-    results = []
-    for start in starts:
-        run = (
+    return summarize_rollouts(
+        (
             rollout_classical(start, config, pursuer=pursuer)
             if rollout is None
             else rollout(pursuer, start, config)
         )
+        for start in starts
+    )
+
+
+def summarize_rollouts(runs: Iterable[Rollout]) -> list[EpisodeResult]:
+    results = []
+    for run in runs:
         capture_time = run.trajectory[-1].time if run.outcome == "capture" else None
         results.append(EpisodeResult(run.trajectory[0].state, run.outcome, capture_time))
     return results
+
+
+def save_episodes(target: Path, episodes: Mapping[str, Iterable[EpisodeResult]]) -> None:
+    with target.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(("pursuer", "x", "y", "outcome", "capture_time"))
+        for name, results in episodes.items():
+            writer.writerows(
+                (name, *result.start, result.outcome, result.capture_time) for result in results
+            )
 
 
 def compare(candidate: Sequence[EpisodeResult], reference: Sequence[EpisodeResult]) -> dict:
@@ -144,11 +160,14 @@ def compare(candidate: Sequence[EpisodeResult], reference: Sequence[EpisodeResul
     return summary
 
 
-def _save_maps(
+def save_maps(
     target: Path,
-    heuristic: Sequence[EpisodeResult],
-    classical: Sequence[EpisodeResult],
+    candidate: Sequence[EpisodeResult],
+    reference: Sequence[EpisodeResult],
     config: GameConfig,
+    *,
+    labels: tuple[str, str] = ("Heuristic", "Classical"),
+    opponent: str = "the classical evader",
 ) -> None:
     from matplotlib import pyplot as plt
     from matplotlib.colors import ListedColormap
@@ -165,7 +184,7 @@ def _save_maps(
     codes = {label: index for index, label in enumerate(colors)}
     size = GRID_MAX - GRID_MIN + 1
     maps = np.zeros((3, size, size), dtype=int)
-    for a, b in zip(heuristic, classical, strict=True):
+    for a, b in zip(candidate, reference, strict=True):
         x, y = a.start
         col, row = round(x * GRID_SCALE) - GRID_MIN, round(y * GRID_SCALE) - GRID_MIN
         if a.outcome == b.outcome:
@@ -179,13 +198,13 @@ def _save_maps(
     fig, axes = plt.subplots(1, 3, figsize=(11, 5), sharex=True, sharey=True)
     fig.subplots_adjust(left=0.065, right=0.98, bottom=0.25, top=0.84, wspace=0.12)
     fig.suptitle(
-        f"Capture by T = {config.horizon:g} against the classical evader",
+        f"Capture by T = {config.horizon:g} against {opponent}",
         fontsize=17,
         fontweight="bold",
     )
     step = 1 / GRID_SCALE
     lower, upper = GRID_MIN / GRID_SCALE - step / 2, GRID_MAX / GRID_SCALE + step / 2
-    for ax, values, title in zip(axes, maps, ("Heuristic", "Classical", "Paired outcomes")):
+    for ax, values, title in zip(axes, maps, (*labels, "Paired outcomes")):
         ax.imshow(
             values,
             origin="lower",
@@ -197,7 +216,7 @@ def _save_maps(
         )
         ax.set(title=title, xlabel="x", xticks=range(-4, 5, 2), yticks=range(-4, 5, 2))
     axes[0].set_ylabel("y")
-    labels = {
+    legend_labels = {
         "outside evaluation": "Inside capture disk",
         "capture": "Capture",
         "time_limit": "Time limit",
@@ -207,7 +226,7 @@ def _save_maps(
     }
     fig.legend(
         handles=[
-            Patch(facecolor=color, edgecolor="#75808c", label=labels[label])
+            Patch(facecolor=color, edgecolor="#75808c", label=legend_labels[label])
             for label, color in colors.items()
         ],
         loc="lower center",
@@ -233,13 +252,7 @@ def main() -> None:
     classical = evaluate_pursuer(classical_pursuer, starts, config)
     summary = compare(heuristic, classical)
     output.mkdir(parents=True, exist_ok=True)
-    with (output / "episodes.csv").open("w", encoding="utf-8", newline="") as file:
-        writer = csv.writer(file)
-        writer.writerow(("pursuer", "x", "y", "outcome", "capture_time"))
-        for name, results in (("heuristic", heuristic), ("classical", classical)):
-            writer.writerows(
-                (name, *result.start, result.outcome, result.capture_time) for result in results
-            )
+    save_episodes(output / "episodes.csv", {"heuristic": heuristic, "classical": classical})
     with (output / "tuning_starts.csv").open("w", encoding="utf-8", newline="") as file:
         writer = csv.writer(file)
         writer.writerow(("x", "y"))
@@ -258,7 +271,7 @@ def main() -> None:
         "metrics": summary,
     }
     (output / "summary.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    _save_maps(output / "maps.png", heuristic, classical, config)
+    save_maps(output / "maps.png", heuristic, classical, config)
     print(f"Evaluated {len(starts)} starts per policy. Results saved to {output}")
 
 

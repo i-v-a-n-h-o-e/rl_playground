@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import csv
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from RL.chauffeur_classical import Policy, Rollout, State, TrajectoryPoint, classical_pursuer
 from RL.chauffeur_evaluation import (
@@ -9,12 +12,33 @@ from RL.chauffeur_evaluation import (
     evaluate_pursuer,
     final_grid,
     heuristic_pursuer,
+    save_episodes,
     tuning_starts,
 )
 from RL.homicidal_chauffeur import GameConfig
 
 
 class ChauffeurEvaluationTests(unittest.TestCase):
+    def test_episode_csv_preserves_schema_and_missing_capture_times(self) -> None:
+        with TemporaryDirectory() as directory:
+            target = Path(directory) / "episodes.csv"
+            save_episodes(
+                target,
+                {
+                    "ppo": [EpisodeResult((0.0, 1.0), "capture", 1.4)],
+                    "classical": [EpisodeResult((0.0, -1.0), "unsupported", None)],
+                },
+            )
+            with target.open(encoding="utf-8", newline="") as file:
+                self.assertEqual(
+                    list(csv.reader(file)),
+                    [
+                        ["pursuer", "x", "y", "outcome", "capture_time"],
+                        ["ppo", "0.0", "1.0", "capture", "1.4"],
+                        ["classical", "0.0", "-1.0", "unsupported", ""],
+                    ],
+                )
+
     def test_heuristic_turns_toward_the_bearing_with_saturation(self) -> None:
         config = GameConfig(dt=0.05)
         for state, expected in (
