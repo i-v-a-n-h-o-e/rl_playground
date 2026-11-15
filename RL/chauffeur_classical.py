@@ -515,6 +515,16 @@ def _line_event_slice(
                     after = gap(cut)
                     if before * after > 0 and abs(after) > 5e-10:
                         continue
+                if label == "barrier" and section[0, 1] <= start[1] <= section[-1, 1]:
+                    # A snapped start is on the exact barrier, not necessarily on
+                    # its polyline. Match the local section by normal distance:
+                    # a steep segment in x(y) magnifies its mesh error in gap().
+                    i = max(1, int(section[:, 1].searchsorted(start[1])))
+                    dx, dy = section[i] - section[i - 1]
+                    if abs(before) * dy <= 2e-7 * hypot(dx, dy) and _barrier_parameter(
+                        (side * start[0], start[1]), g
+                    ) is not None:
+                        continue
                 t = cut if abs(after) <= 5e-10 else bisect(gap, 0, cut)
                 x, y = path(t)
                 if section[0, 1] <= y <= section[-1, 1] and t > 1e-9:

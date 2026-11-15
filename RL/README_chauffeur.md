@@ -243,6 +243,8 @@ print(compare(candidate, baseline))
 
 ## Среда для PPO
 
+[Замеры CPU и MPS и границы переноса среды на GPU](../docs/chauffeur-mps.md).
+
 ```python
 from stable_baselines3 import PPO
 

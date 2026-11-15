@@ -72,6 +72,22 @@ class ChauffeurPPOTests(unittest.TestCase):
             self.assertEqual(info["phi"], phi)
             self.assertAlmostEqual(info["psi"], psi)
 
+    def test_barrier_crossing_does_not_repeat_after_snapping_to_the_curve(self) -> None:
+        env = ChauffeurPPOEnv()
+        for side in (-1, 1):
+            with self.subTest(side=side):
+                # P1 just before the report's first barrier event.
+                env.reset(options={"state": (side * 0.9377220624501995, 1.5130425617408336)})
+                _, _, terminated, truncated, hit = env.step(-side * 0.22327621281147003)
+                self.assertFalse(terminated or truncated)
+                self.assertEqual(hit["event"], "barrier")
+                self.assertAlmostEqual(hit["dt"], 0.004972689, places=8)
+
+                _, _, terminated, truncated, after = env.step(-side * 0.222512885928154)
+                self.assertFalse(terminated or truncated)
+                self.assertIsNone(after["event"])
+                self.assertEqual(after["dt"], env.config.dt)
+
     def test_unavailable_evader_is_a_separate_outcome_without_capture_bonus(
         self,
     ) -> None:
