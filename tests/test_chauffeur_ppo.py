@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from math import ceil
 
 import gymnasium as gym
 import numpy as np
@@ -109,11 +110,12 @@ class ChauffeurPPOTests(unittest.TestCase):
 
     def test_random_rollouts_have_finite_transitions(self) -> None:
         env = ChauffeurPPOEnv()
+        step_limit = ceil(env.config.horizon / env.config.dt)
         env.action_space.seed(42)
         for seed in range(42, 58):
             observation, _ = env.reset(seed=seed)
             self.assertTrue(env.observation_space.contains(observation))
-            for _ in range(300):
+            for _ in range(step_limit):
                 action = env.action_space.sample()
                 observation, reward, terminated, truncated, info = env.step(action)
                 self.assertTrue(env.observation_space.contains(observation))

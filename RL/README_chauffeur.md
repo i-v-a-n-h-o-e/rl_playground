@@ -26,7 +26,7 @@ uv run --project .python_env --locked python -m unittest discover -s tests -v
 ```python
 from RL.homicidal_chauffeur import GameConfig, HomicidalChauffeurEnv
 
-env = HomicidalChauffeurEnv(GameConfig(gamma=0.5, beta=0.3, dt=0.05, horizon=15.0))
+env = HomicidalChauffeurEnv(GameConfig(gamma=0.5, beta=0.3, dt=0.05, horizon=20.0))
 obs, info = env.reset(seed=42, options={"state": (1.0, 2.5)})
 obs, reward, terminated, truncated, info = env.step_controls(phi=0.7, psi=-0.4)
 print(info["state"], info["elapsed_time"], info["termination_reason"])
@@ -141,7 +141,7 @@ RK4, поэтому ошибка интегрирования может изм�
 from RL.chauffeur_classical import classical_evader, classical_pursuer, rollout_classical
 from RL.homicidal_chauffeur import GameConfig
 
-config = GameConfig(gamma=0.5, beta=0.3, dt=0.025, horizon=15.0)
+config = GameConfig(gamma=0.5, beta=0.3, dt=0.025, horizon=20.0)
 start = (1.105240, 2.278470)
 print(classical_pursuer(start, config), classical_evader(start, config))
 result = rollout_classical(start, config)
@@ -157,7 +157,7 @@ print(result.outcome, result.trajectory[-1].time)
 состоянии выбора управления и завершает прогон с `unsupported` при выходе за
 пределы ветвей. `time_limit` означает достижение заданного горизонта.
 
-### Контрольные прогоны при горизонте 15
+### Контрольные прогоны при прежнем горизонте 15
 
 | Измерение | `dt = 0.05` | `dt = 0.025` | Непрерывная модель |
 |---|---:|---:|---:|
@@ -214,7 +214,7 @@ uv run --project .python_env --locked python -m unittest discover -s tests -v
 Итоговые старты заданы [постановкой задачи в Notion](https://app.notion.com/p/4122971d9e9980b88422ce4b334f05b9).
 Используем всю сетку `[-4, 4]²` с шагом `0.1`, включая обе полуплоскости.
 После исключения круга захвата остаётся 6 532 узла. Параметры общего прогона
-`gamma = 0.5`, `beta = 0.3`, `dt = 0.05`, `T = 15`.
+`gamma = 0.5`, `beta = 0.3`, `dt = 0.05`, `T = 20` (400 обычных шагов без захвата).
 Для настройки используем 512 равномерно выбранных стартов из того же квадрата
 вне круга с `seed = 42`. Выборка фиксирована, совпадения с итоговой сеткой
 отбрасываются. Для подбора параметров стратегии используйте `tuning_starts()`.
@@ -293,6 +293,7 @@ model.learn(total_timesteps=128)
 стартового квадрата и `beta` (`s=4` по умолчанию).
 
 Награда на шаге равна `float(terminated) - info["dt"] / T`, где `T` — горизонт.
+При `T = 20` обычный шаг `0.05` даёт штраф `0.0025`.
 Без дисконтирования захват в момент `t_c` даёт `1 - t_c/T`, тайм-аут даёт `-1`.
 Дополнительных слагаемых награды нет. Захват даёт `terminated=True`, а
 достижение горизонта без захвата — `truncated=True`. При совпадении приоритет

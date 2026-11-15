@@ -172,9 +172,10 @@ class ChauffeurTests(unittest.TestCase):
         np.testing.assert_allclose(env.state, [0.3, 0], atol=1e-12)
 
     def test_time_limit_shortens_last_step_and_prevents_further_steps(self) -> None:
-        for horizon, expected_steps in ((0.12, 3), (15.0, 300)):
+        for config, expected_steps in ((GameConfig(horizon=0.12), 3), (GameConfig(), 400)):
+            horizon = config.horizon
             with self.subTest(horizon=horizon):
-                env = HomicidalChauffeurEnv(GameConfig(horizon=horizon))
+                env = HomicidalChauffeurEnv(config)
                 env.reset(options={"state": (2, -2)})
                 while True:
                     _, reward, terminated, truncated, info = env.step_controls(0, 0)

@@ -44,7 +44,7 @@ def main() -> None:
     parser.add_argument("--gamma", type=float, default=0.5)
     parser.add_argument("--beta", type=float, default=0.3)
     parser.add_argument("--dt", type=float, default=0.05)
-    parser.add_argument("--horizon", type=float, default=15.0)
+    parser.add_argument("--horizon", type=float, default=GameConfig().horizon)
     parser.add_argument("--trace", action="store_true", help="Print all states as JSON lines")
     args = parser.parse_args()
     config = GameConfig(gamma=args.gamma, beta=args.beta, dt=args.dt, horizon=args.horizon)

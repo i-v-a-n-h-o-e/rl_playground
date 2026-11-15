@@ -25,7 +25,7 @@ class GameConfig:
     gamma: float = 0.5
     beta: float = 0.3
     dt: float = 0.05
-    horizon: float = 15.0
+    horizon: float = 20.0
     initial_low: float = -4.0
     initial_high: float = 4.0
 
