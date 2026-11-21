@@ -19,9 +19,11 @@ from RL.chauffeur_classical import (
     DEFAULT_CONFIG,
     Policy,
     Rollout,
+    RolloutPolicy,
     State,
     classical_pursuer,
     rollout_classical,
+    rollout_feedback,
 )
 from RL.homicidal_chauffeur import GameConfig, is_captured
 
@@ -64,6 +66,11 @@ class EpisodeResult:
     capture_time: float | None
 
 
+def _episode_result(run: Rollout) -> EpisodeResult:
+    time = run.trajectory[-1].time if run.outcome == "capture" else None
+    return EpisodeResult(run.trajectory[0].state, run.outcome, time)
+
+
 def evaluate_pursuer(
     pursuer: Policy,
     starts: Iterable[State],
@@ -73,21 +80,34 @@ def evaluate_pursuer(
 ) -> list[EpisodeResult]:
     """Apply one episode protocol to a feedback policy on each start.
 
-    By default, use the classical evader and its positive-axis event rule,
-    with out-of-domain decisions marked unsupported. For another protocol,
+    By default, use the shared policy step with the classical pedestrian
+    and mark missing actions unsupported. For another protocol,
     pass a rollout accepting the pursuer, start and config and returning the
     trajectory from reset. Use the same rollout for every compared policy.
     """
     results = []
     for start in starts:
         run = (
-            rollout_classical(start, config, pursuer=pursuer)
+            rollout_classical(
+                start, config, pursuer=None if pursuer is classical_pursuer else pursuer
+            )
             if rollout is None
             else rollout(pursuer, start, config)
         )
-        capture_time = run.trajectory[-1].time if run.outcome == "capture" else None
-        results.append(EpisodeResult(run.trajectory[0].state, run.outcome, capture_time))
+        results.append(_episode_result(run))
     return results
+
+
+def evaluate_ppo(
+    policy: RolloutPolicy,
+    starts: Iterable[State],
+    config: GameConfig = DEFAULT_CONFIG,
+) -> list[EpisodeResult]:
+    """Use the same decisions and opponent as the baselines, with PPO observations."""
+    from RL.chauffeur_ppo import ChauffeurPPOEnv
+
+    with ChauffeurPPOEnv(config) as env:
+        return [_episode_result(rollout_feedback(start, env, pursuer=policy)) for start in starts]
 
 
 def compare(candidate: Sequence[EpisodeResult], reference: Sequence[EpisodeResult]) -> dict:
@@ -133,7 +153,10 @@ def compare(candidate: Sequence[EpisodeResult], reference: Sequence[EpisodeResul
             "counts": {
                 outcome: counts[outcome] for outcome in ("capture", "time_limit", "unsupported")
             },
-            "capture_rate_bounds": [captures / total, (captures + counts["unsupported"]) / total],
+            "capture_rate_bounds": [
+                captures / total,
+                (captures + counts["unsupported"]) / total,
+            ],
             "capture_rate_on_both_resolved": (
                 paired_captures / len(both_resolved) if both_resolved else None
             ),
@@ -146,9 +169,10 @@ def compare(candidate: Sequence[EpisodeResult], reference: Sequence[EpisodeResul
 
 def _save_maps(
     target: Path,
-    heuristic: Sequence[EpisodeResult],
+    candidate: Sequence[EpisodeResult],
     classical: Sequence[EpisodeResult],
     config: GameConfig,
+    labels: tuple[str, str] = ("Heuristic", "Classical"),
 ) -> None:
     from matplotlib import pyplot as plt
     from matplotlib.colors import ListedColormap
@@ -165,7 +189,7 @@ def _save_maps(
     codes = {label: index for index, label in enumerate(colors)}
     size = GRID_MAX - GRID_MIN + 1
     maps = np.zeros((3, size, size), dtype=int)
-    for a, b in zip(heuristic, classical, strict=True):
+    for a, b in zip(candidate, classical, strict=True):
         x, y = a.start
         col, row = round(x * GRID_SCALE) - GRID_MIN, round(y * GRID_SCALE) - GRID_MIN
         if a.outcome == b.outcome:
@@ -185,7 +209,7 @@ def _save_maps(
     )
     step = 1 / GRID_SCALE
     lower, upper = GRID_MIN / GRID_SCALE - step / 2, GRID_MAX / GRID_SCALE + step / 2
-    for ax, values, title in zip(axes, maps, ("Heuristic", "Classical", "Paired outcomes")):
+    for ax, values, title in zip(axes, maps, (*labels, "Paired outcomes")):
         ax.imshow(
             values,
             origin="lower",
@@ -222,7 +246,9 @@ def _save_maps(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("data/chauffeur_baseline"))
-    output = parser.parse_args().output
+    parser.add_argument("--checkpoint", type=Path, help="also evaluate an SB3 PPO checkpoint")
+    args = parser.parse_args()
+    output = args.output
 
     import matplotlib
 
@@ -233,10 +259,42 @@ def main() -> None:
     classical = evaluate_pursuer(classical_pursuer, starts, config)
     summary = compare(heuristic, classical)
     output.mkdir(parents=True, exist_ok=True)
+    policies = {"heuristic": heuristic, "classical": classical}
+    extra = {}
+    if args.checkpoint is not None:
+        from stable_baselines3 import PPO
+
+        model = PPO.load(args.checkpoint, device="cpu")
+
+        def predict(_state, _config, observation):
+            action, _ = model.predict(observation, deterministic=True)
+            return float(action.item())
+
+        ppo = evaluate_ppo(predict, starts, config)
+        policies["ppo"] = ppo
+        extra = {
+            "checkpoint": str(args.checkpoint),
+            "ppo_vs_heuristic": compare(ppo, heuristic),
+            "ppo_vs_classical": compare(ppo, classical),
+        }
+        _save_maps(
+            output / "ppo_vs_heuristic.png",
+            ppo,
+            heuristic,
+            config,
+            ("PPO", "Heuristic"),
+        )
+        _save_maps(
+            output / "ppo_vs_classical.png",
+            ppo,
+            classical,
+            config,
+            ("PPO", "Classical"),
+        )
     with (output / "episodes.csv").open("w", encoding="utf-8", newline="") as file:
         writer = csv.writer(file)
         writer.writerow(("pursuer", "x", "y", "outcome", "capture_time"))
-        for name, results in (("heuristic", heuristic), ("classical", classical)):
+        for name, results in policies.items():
             writer.writerows(
                 (name, *result.start, result.outcome, result.capture_time) for result in results
             )
@@ -256,6 +314,7 @@ def main() -> None:
         "reference": "classical_pursuer",
         "evader": "classical_evader",
         "metrics": summary,
+        **extra,
     }
     (output / "summary.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     _save_maps(output / "maps.png", heuristic, classical, config)

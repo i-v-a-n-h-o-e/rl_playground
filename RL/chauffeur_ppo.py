@@ -5,13 +5,18 @@ from __future__ import annotations
 import numpy as np
 from gymnasium import spaces
 
-from RL.chauffeur_classical import DEFAULT_CONFIG, classical_evader
+from RL.chauffeur_classical import DEFAULT_CONFIG, classical_feedback, step_feedback
 from RL.chauffeur_theory import BETA, GAMMA
-from RL.homicidal_chauffeur import GameConfig, HomicidalChauffeurEnv, Observation, Transition
+from RL.homicidal_chauffeur import (
+    GameConfig,
+    HomicidalChauffeurEnv,
+    Observation,
+    Transition,
+)
 
 
 class ChauffeurPPOEnv(HomicidalChauffeurEnv):
-    """Control phi against fixed classical feedback with psi=0 outside its coverage."""
+    """Control phi against the same classical pedestrian used in evaluation."""
 
     def __init__(self, config: GameConfig = DEFAULT_CONFIG) -> None:
         if (config.gamma, config.beta) != (GAMMA, BETA):
@@ -32,12 +37,11 @@ class ChauffeurPPOEnv(HomicidalChauffeurEnv):
         return np.array([x_scaled, y_scaled, r_scaled, x / r, y / r, time_left], dtype=np.float32)
 
     def step(self, action: Observation) -> Transition:
-        """Hold both controls through the RK4 step, including across the axis."""
+        """End at the shared decision event or the finite-horizon task deadline."""
         self._require_active()
-        x, y = self.state
-        psi = classical_evader((float(x), float(y)), self.config)
-        observation, _, terminated, truncated, info = self.step_controls(
-            action, 0.0 if psi is None else psi
+        state = tuple(map(float, self.state))
+        observation, _, terminated, truncated, info = step_feedback(
+            self, action, feedback=classical_feedback(state, self.config)
         )
-        reward = float(terminated) - info["dt"] / self.config.horizon
-        return observation, reward, terminated, truncated, info
+        reward = float(info["termination_reason"] == "capture") - info["dt"] / self.config.horizon
+        return observation, reward, terminated or truncated, False, info
