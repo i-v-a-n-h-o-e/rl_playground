@@ -1,0 +1,125 @@
+{
+  "git_base": "806f01b84b2378950748d045308e968de7df33ee",
+  "source_sha256": {
+    ".python_env/.python-version": "7b55f8e67b5623c4bef3fa691288da9437d79d3aba156de48d481db32ac7d16d",
+    ".python_env/pyproject.toml": "021bbcbbfeb9601f9735627a339db24bfd13b4d3fd660d931d00d0ded98db13a",
+    ".python_env/uv.lock": "7fc84282d0e4ef6ed54d8a6c5f16c6469d4cf869d74c8240fe66c428bb5bda4f",
+    "RL/chauffeur_classical.py": "9103fbc50cae1e8a94e6658d9e304ca7d5a12f5ce93cdbb60641bbd4a33a5c21",
+    "RL/chauffeur_evaluation.py": "501207b52f9c8472527a01cac2bd8290054a040ccc161d7d58b052d2273ac3e5",
+    "RL/chauffeur_ppo.py": "0e171113b215a8fb555f424a4871fb1020f78dd2624e95b482d98fec19115b0d",
+    "RL/chauffeur_ppo_tuning.py": "de042acbc7f44a05e44bdee9ef7522f8857f879520196843c8083ebdea5cf018",
+    "RL/chauffeur_task10/__init__.py": "213821f34df0b8f3c7056993004ab3b741dcb435fe5aee84261177d0e077432a",
+    "RL/chauffeur_task10/baseline.py": "4287a85d8a448c028ba5b0be05a6bba078c1cbda52b21bcb5b681dfffcd1e668",
+    "RL/chauffeur_task10/common.py": "9d70d1bb8ed34591e0996ae4c4107fdcebed3cd837ba20fd1db9f32fe0fda3b5",
+    "RL/chauffeur_task10/compare_control.py": "bdb87b6c2c52ece802f9e7637068b75eed4f81ae5e43563a841f3eac34e2dd85",
+    "RL/chauffeur_task10/length.py": "c7f9f2cf27892f60cf39bea5f9ffd3fe556afe0654a202a13295631ba27a04ec",
+    "RL/chauffeur_task10/reward.py": "dfd4420f0d4d4a0850a57ead2e06ad580137d2aae6b71ef44946da9707f615e9",
+    "RL/chauffeur_task10/width.py": "09c2f41994dbde08c61f15912a2ff215799803cafc85004aff9b9b2adc08a52a",
+    "RL/chauffeur_theory.py": "a1b85e94b2947ef4a5db0eff5d7a2b5ba61fa41be53e94b7c4d1c67378943d9b",
+    "RL/homicidal_chauffeur.py": "f2826d83712b8140bfd6361cd43247feddb736cca9f06a721d2b28f2be191e99",
+    "docs/chauffeur-task10.md": "7bbc1d7df8107a252c2c1e252c272f80970f697072bedc8dc849e9c35c5733f6",
+    "tests/test_chauffeur_task10.py": "98ffe52c72cac575edb7a9860a558257b36d4fcce639a86349cd2b304d45119d"
+  },
+  "checkpoint_environment": {
+    "OS": "macOS-15.7.9-arm64-arm-64bit Darwin Kernel Version 24.6.0: Tue Jul 21 20:51:05 PDT 2026; root:xnu-11417.140.69.711.44~1/RELEASE_ARM64_T6000",
+    "Python": "3.12.13",
+    "Stable-Baselines3": "2.9.2",
+    "PyTorch": "2.13.0",
+    "GPU Enabled": "False",
+    "Numpy": "1.26.4",
+    "Cloudpickle": "3.1.2",
+    "Gymnasium": "1.3.0",
+    "OpenAI Gym": "0.26.2"
+  },
+  "evaluation": {
+    "horizon": 20,
+    "mode": "first_contact",
+    "evader": "classical",
+    "deterministic": true,
+    "references": [
+      "heuristic",
+      "classical"
+    ],
+    "tuning": {
+      "file": "tuning_starts.csv",
+      "seed": 42,
+      "count": 512,
+      "sha256": "066112c229f6cfdd98bb07d75ebaef517bbbe0afc7e481e68873529e21a46ab4"
+    },
+    "holdout": {
+      "file": "holdout_starts.csv",
+      "seed": 20261119,
+      "generator": "numpy.random.PCG64",
+      "count": 2048,
+      "sha256": "e573ccf3b40861233ba85f8938ccd0b0d437267bf8373fa2580c78c723fc49fa",
+      "distribution": "uniform [-4,4]^2; reject capture disk, tuning starts, final grid and duplicates"
+    },
+    "final_grid": {
+      "min": -4,
+      "max": 4,
+      "step": 0.1,
+      "count": 6532
+    }
+  },
+  "training_seeds": {
+    "task10": [
+      17,
+      29,
+      43
+    ],
+    "confirmation": [
+      59,
+      71
+    ]
+  },
+  "control": {
+    "architecture": "wide",
+    "reward": "potential",
+    "potential_scale": 0.1,
+    "decisions": 262144,
+    "ppo": {
+      "device": "cpu",
+      "n_steps": 1024,
+      "gamma": 0.99,
+      "batch_size": 64,
+      "n_epochs": 10,
+      "learning_rate": 0.0003,
+      "gae_lambda": 0.95,
+      "ent_coef": 0.0,
+      "policy": "MlpPolicy",
+      "net_arch": {
+        "pi": [
+          64,
+          64
+        ],
+        "vf": [
+          32,
+          32
+        ]
+      }
+    },
+    "environment": {
+      "gamma": 0.5,
+      "beta": 0.3,
+      "dt": 0.05,
+      "horizon": 20.0,
+      "initial_low": -4.0,
+      "initial_high": 4.0
+    },
+    "torch_threads": 1,
+    "checkpoints": {
+      "17": {
+        "path": "data/chauffeur-task10/length-wide-potential/seed-17/ppo-262144.zip",
+        "sha256": "62ae0c4d07cf90bf59aa03e588d1b78b4d66a54fc9a71e7622fdfd75f323a3fb"
+      },
+      "29": {
+        "path": "data/chauffeur-task10/length-wide-potential/seed-29/ppo-262144.zip",
+        "sha256": "766e37d8b6a5a6197d9979e9d536aa565e5b6dd9cbb6ae0b318a4c4dca94fb3f"
+      },
+      "43": {
+        "path": "data/chauffeur-task10/length-wide-potential/seed-43/ppo-262144.zip",
+        "sha256": "090c5eb6950216a38cb896fca4cf349e43b5bf3c669e9dc48029111406581847"
+      }
+    }
+  }
+}
