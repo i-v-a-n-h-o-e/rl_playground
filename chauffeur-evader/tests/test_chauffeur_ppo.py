@@ -13,10 +13,10 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.env_checker import check_env as check_sb3_env
 from stable_baselines3.common.vec_env import DummyVecEnv
 
-from RL.chauffeur_classical import classical_evader, rollout_classical
-from RL.chauffeur_evaluation import evaluate_ppo
-from RL.chauffeur_ppo import ChauffeurPPOEnv
-from RL.homicidal_chauffeur import GameConfig
+from chauffeur_evader.chauffeur_classical import classical_evader, rollout_classical
+from chauffeur_evader.chauffeur_evaluation import evaluate_ppo
+from chauffeur_evader.chauffeur_ppo import ChauffeurPPOEnv
+from chauffeur_evader.homicidal_chauffeur import GameConfig
 
 
 class ChauffeurPPOTests(unittest.TestCase):
@@ -93,7 +93,7 @@ class ChauffeurPPOTests(unittest.TestCase):
     ) -> None:
         env = ChauffeurPPOEnv()
         env.reset(options={"state": (0, -3)})
-        with patch("RL.chauffeur_ppo.classical_feedback", return_value=None):
+        with patch("chauffeur_evader.chauffeur_ppo.classical_feedback", return_value=None):
             _, reward, terminated, truncated, info = env.step(np.zeros(1, dtype=np.float32))
         self.assertEqual((reward, terminated, truncated), (0.0, True, False))
         self.assertEqual(info["termination_reason"], "unsupported")

@@ -5,9 +5,9 @@ from __future__ import annotations
 import numpy as np
 from gymnasium import spaces
 
-from RL.chauffeur_classical import DEFAULT_CONFIG, classical_feedback, step_feedback
-from RL.chauffeur_theory import BETA, GAMMA
-from RL.homicidal_chauffeur import (
+from chauffeur_evader.chauffeur_classical import DEFAULT_CONFIG, classical_feedback, step_feedback
+from chauffeur_evader.chauffeur_theory import BETA, GAMMA
+from chauffeur_evader.homicidal_chauffeur import (
     GameConfig,
     HomicidalChauffeurEnv,
     Observation,

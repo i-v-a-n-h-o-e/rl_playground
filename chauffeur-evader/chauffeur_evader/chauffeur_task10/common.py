@@ -18,8 +18,8 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.logger import configure
 from stable_baselines3.common.monitor import Monitor
 
-from RL.chauffeur_classical import DEFAULT_CONFIG, State, classical_pursuer
-from RL.chauffeur_evaluation import (
+from chauffeur_evader.chauffeur_classical import DEFAULT_CONFIG, State, classical_pursuer
+from chauffeur_evader.chauffeur_evaluation import (
     TUNING_SEED,
     EpisodeResult,
     compare,
@@ -28,10 +28,11 @@ from RL.chauffeur_evaluation import (
     heuristic_pursuer,
     tuning_starts,
 )
-from RL.chauffeur_ppo import ChauffeurPPOEnv
-from RL.chauffeur_ppo_tuning import STEPS, TrainingDiagnostics
-from RL.homicidal_chauffeur import Observation, Transition
+from chauffeur_evader.chauffeur_ppo import ChauffeurPPOEnv
+from chauffeur_evader.chauffeur_ppo_tuning import STEPS, TrainingDiagnostics
+from chauffeur_evader.homicidal_chauffeur import Observation, Transition
 
+ROOT = Path(__file__).resolve().parents[2]
 SEEDS = (17, 29, 43)
 DISCOUNT = 0.99
 NETWORKS = {"baseline": [32, 32], "wide": {"pi": [64, 64], "vf": [32, 32]}}
@@ -258,7 +259,7 @@ def parser(description: str) -> argparse.ArgumentParser:
     cli.add_argument(
         "--output",
         type=Path,
-        default=Path("data/chauffeur-task10"),
+        default=ROOT / "data/chauffeur-task10",
         help="корневой каталог серии экспериментов",
     )
     return cli

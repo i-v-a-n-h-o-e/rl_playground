@@ -10,9 +10,9 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
 
-from RL.chauffeur_classical import _path
-from RL.chauffeur_ppo import ChauffeurPPOEnv
-from RL.homicidal_chauffeur import GameConfig
+from chauffeur_evader.chauffeur_classical import _path
+from chauffeur_evader.chauffeur_ppo import ChauffeurPPOEnv
+from chauffeur_evader.homicidal_chauffeur import GameConfig
 
 
 class TimedPPO(PPO):

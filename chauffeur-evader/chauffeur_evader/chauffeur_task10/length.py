@@ -1,6 +1,6 @@
 """Сравнение двух чекпойнтов из одного обучения PPO."""
 
-from RL.chauffeur_task10.common import NETWORKS, REWARDS, parser, run
+from chauffeur_evader.chauffeur_task10.common import NETWORKS, REWARDS, parser, run
 
 if __name__ == "__main__":
     cli = parser(__doc__)

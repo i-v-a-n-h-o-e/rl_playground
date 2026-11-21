@@ -7,8 +7,8 @@ import numpy as np
 from gymnasium.utils.env_checker import check_env as check_gym_env
 from stable_baselines3.common.env_checker import check_env as check_sb3_env
 
-from RL.chauffeur_demo import run_episode
-from RL.homicidal_chauffeur import GameConfig, HomicidalChauffeurEnv, dynamics
+from chauffeur_evader.chauffeur_demo import run_episode
+from chauffeur_evader.homicidal_chauffeur import GameConfig, HomicidalChauffeurEnv, dynamics
 
 
 class ChauffeurTests(unittest.TestCase):

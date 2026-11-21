@@ -2,16 +2,16 @@
 
 Источник: [Постановка задачи в Notion](https://app.notion.com/p/4122971d9e9980b88422ce4b334f05b9).
 В репозитории есть симулятор, классические стратегии для параметров курсовой и [среда для PPO](#среда-для-ppo).
-Команды для повторов и сравнений PPO: [эксперименты задачи 10](../docs/chauffeur-task10.md).
+Команды для повторов и сравнений PPO: [эксперименты задачи 10](docs/chauffeur-task10.md).
 
-Из корня репозитория (Python 3.12, зависимости и точные версии в
+Из корня репозитория с `PYTHONPATH=chauffeur-evader` (Python 3.12, зависимости и точные версии в
 `.python_env/pyproject.toml` и `.python_env/uv.lock`):
 
 ```bash
 uv sync --project .python_env --locked --inexact
-uv run --project .python_env --locked python -m RL.chauffeur_demo
-uv run --project .python_env --locked python -m RL.chauffeur_demo --state 2 -2 --horizon 0.12 --trace
-uv run --project .python_env --locked python -m unittest discover -s tests -v
+PYTHONPATH=chauffeur-evader uv run --project .python_env --locked python -m chauffeur_evader.chauffeur_demo
+PYTHONPATH=chauffeur-evader uv run --project .python_env --locked python -m chauffeur_evader.chauffeur_demo --state 2 -2 --horizon 0.12 --trace
+PYTHONPATH=chauffeur-evader uv run --project .python_env --locked python -m unittest discover -s chauffeur-evader/tests -v
 ```
 
 `--inexact` сохраняет пакеты, установленные вручную сверх lock-файла
@@ -24,7 +24,7 @@ uv run --project .python_env --locked python -m unittest discover -s tests -v
 применённых управлений. По умолчанию окно не открывается.
 
 ```python
-from RL.homicidal_chauffeur import GameConfig, HomicidalChauffeurEnv
+from chauffeur_evader.homicidal_chauffeur import GameConfig, HomicidalChauffeurEnv
 
 env = HomicidalChauffeurEnv(GameConfig(gamma=0.5, beta=0.3, dt=0.05, horizon=20.0))
 obs, info = env.reset(seed=42, options={"state": (1.0, 2.5)})
@@ -86,8 +86,8 @@ dy/dt = -1 + phi*x + gamma*cos(psi)
 ## Диагностика динамики и шага
 
 ```bash
-uv run --project .python_env --locked python -m unittest discover -s tests -p test_homicidal_chauffeur.py -v
-uv run --project .python_env --locked python -m RL.chauffeur_diagnostics
+PYTHONPATH=chauffeur-evader uv run --project .python_env --locked python -m unittest discover -s chauffeur-evader/tests -p test_homicidal_chauffeur.py -v
+PYTHONPATH=chauffeur-evader uv run --project .python_env --locked python -m chauffeur_evader.chauffeur_diagnostics
 ```
 
 Тесты сверяют координаты и знаки с точными решениями для прямой и максимального
@@ -164,7 +164,7 @@ RK4, поэтому ошибка интегрирования может изм�
 Диагностические прогоны:
 
 ```python
-from RL.chauffeur_classical import rollout_classical
+from chauffeur_evader.chauffeur_classical import rollout_classical
 
 reference = rollout_classical((0.45, 1.0))
 opened = rollout_classical((0.29085400128, 0.92860196313), mode="merz")
@@ -195,12 +195,12 @@ EL и SE, обе стороны PDL и безопасный контакт с у
 отбрасываются. Для подбора параметров стратегии используйте `tuning_starts()`.
 
 ```bash
-uv run --project .python_env --locked python -m RL.chauffeur_evaluation
-uv run --project .python_env --locked python -m RL.chauffeur_evaluation \
-  --checkpoint data/chauffeur_ppo/ppo.zip --output data/chauffeur_comparison
+PYTHONPATH=chauffeur-evader uv run --project .python_env --locked python -m chauffeur_evader.chauffeur_evaluation
+PYTHONPATH=chauffeur-evader uv run --project .python_env --locked python -m chauffeur_evader.chauffeur_evaluation \
+  --checkpoint chauffeur-evader/data/chauffeur_ppo/ppo.zip --output chauffeur-evader/data/chauffeur_comparison
 ```
 
-Команда сохраняет в `data/chauffeur_baseline/` следующие файлы. Путь можно
+Команда сохраняет в `chauffeur-evader/data/chauffeur_baseline/` следующие файлы. Путь можно
 задать аргументом `--output`.
 
 - `episodes.csv` содержит политику шофёра, исходные `x, y`, исход и время
@@ -215,7 +215,7 @@ uv run --project .python_env --locked python -m RL.chauffeur_evaluation \
 `pursuer((x, y), config) -> float | None` в ту же процедуру:
 
 ```python
-from RL.chauffeur_evaluation import compare, evaluate_pursuer, final_grid, heuristic_pursuer
+from chauffeur_evader.chauffeur_evaluation import compare, evaluate_pursuer, final_grid, heuristic_pursuer
 
 starts = final_grid()
 baseline = evaluate_pursuer(heuristic_pursuer, starts)
@@ -244,12 +244,12 @@ print(compare(candidate, baseline))
 
 ## Среда для PPO
 
-[Замеры CPU и MPS и границы переноса среды на GPU](../docs/chauffeur-mps.md).
+[Замеры CPU и MPS и границы переноса среды на GPU](docs/chauffeur-mps.md).
 
 ```python
 from stable_baselines3 import PPO
 
-from RL.chauffeur_ppo import ChauffeurPPOEnv
+from chauffeur_evader.chauffeur_ppo import ChauffeurPPOEnv
 
 env = ChauffeurPPOEnv()
 model = PPO("MlpPolicy", env, n_steps=64, batch_size=32, n_epochs=1, seed=42, device="cpu")
@@ -276,5 +276,5 @@ model.learn(total_timesteps=128)
 среде нужен новый запуск.
 
 ```bash
-uv run --project .python_env --locked python -m unittest discover -s tests -p test_chauffeur_ppo.py -v
+PYTHONPATH=chauffeur-evader uv run --project .python_env --locked python -m unittest discover -s chauffeur-evader/tests -p test_chauffeur_ppo.py -v
 ```

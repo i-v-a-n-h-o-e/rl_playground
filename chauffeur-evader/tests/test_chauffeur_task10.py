@@ -5,9 +5,9 @@ from math import hypot
 
 import numpy as np
 
-from RL.chauffeur_ppo import ChauffeurPPOEnv
-from RL.chauffeur_task10.common import PotentialRewardEnv
-from RL.homicidal_chauffeur import GameConfig
+from chauffeur_evader.chauffeur_ppo import ChauffeurPPOEnv
+from chauffeur_evader.chauffeur_task10.common import PotentialRewardEnv
+from chauffeur_evader.homicidal_chauffeur import GameConfig
 
 
 class PotentialRewardTests(unittest.TestCase):

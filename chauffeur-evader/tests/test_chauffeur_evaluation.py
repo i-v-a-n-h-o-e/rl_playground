@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from RL.chauffeur_classical import Policy, Rollout, State, TrajectoryPoint
-from RL.chauffeur_evaluation import (
+from chauffeur_evader.chauffeur_classical import Policy, Rollout, State, TrajectoryPoint
+from chauffeur_evader.chauffeur_evaluation import (
     EpisodeResult,
     compare,
     evaluate_ppo,
@@ -12,7 +12,7 @@ from RL.chauffeur_evaluation import (
     heuristic_pursuer,
     tuning_starts,
 )
-from RL.homicidal_chauffeur import GameConfig
+from chauffeur_evader.homicidal_chauffeur import GameConfig
 
 
 class ChauffeurEvaluationTests(unittest.TestCase):

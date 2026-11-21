@@ -24,14 +24,14 @@
 
 ## Зафиксированный протокол
 
-- Все три контрольных чекпойнта взяты из `data/chauffeur-task10/length-wide-potential/`.
+- Все три контрольных чекпойнта взяты из `chauffeur-evader/data/chauffeur-task10/length-wide-potential/`.
   Оба скрытых слоя сети управления имеют ширину 64, оба слоя сети оценки — 32.
   Масштаб потенциала — 0,1. Остальные параметры обучения, настройки среды,
   версия исходной базы Git, SHA‑256 кода и версии из чекпойнтов записаны в
   [protocol.json](../experiments/chauffeur-task10-v1/protocol.json).
 - [models.sha256](../experiments/chauffeur-task10-v1/models.sha256) фиксирует 30 ZIP-файлов,
   включая промежуточные чекпойнты. Из корня репозитория хеши локальных моделей
-  можно проверить командой `shasum -a 256 -c experiments/chauffeur-task10-v1/models.sha256`.
+  можно проверить командой `(cd chauffeur-evader && shasum -a 256 -c experiments/chauffeur-task10-v1/models.sha256)`.
 - [tuning_starts.csv](../experiments/chauffeur-task10-v1/tuning_starts.csv) содержит
   исходные 512 стартов с seed 42 в порядке оценки. Для независимой проверки зафиксирован
   [holdout_starts.csv](../experiments/chauffeur-task10-v1/holdout_starts.csv) с 2 048 стартами
@@ -54,12 +54,12 @@ PyTorch 2.13.0, NumPy 1.26.4 и Gymnasium 1.3.0. Хеши файлов окру�
 Команда для существующего seed 17 из корня репозитория выглядит так.
 
 ```sh
-.python_env/.venv/bin/python -m RL.chauffeur_task10.compare_control \
+PYTHONPATH=chauffeur-evader .python_env/.venv/bin/python -m chauffeur_evader.chauffeur_task10.compare_control \
   data/novyi-variant/seed-17/ppo-262144.zip --output data/sravnenie/seed-17
 ```
 
 Для seed 59 и 71 передайте `--control` с путём к соответствующему новому
 чекпойнту `wide + potential` на 262 144 решениях. Рядом с ним должен лежать
 `settings.json`, который записывает функция `train` из
-`RL.chauffeur_task10.common`. Для независимой оценки добавьте `--holdout`.
+`chauffeur_evader.chauffeur_task10.common`. Для независимой оценки добавьте `--holdout`.
 Артефакты каждого вызова сохраняются в новый каталог.

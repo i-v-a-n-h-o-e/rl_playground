@@ -15,7 +15,7 @@ from typing import Literal
 
 import numpy as np
 
-from RL.chauffeur_classical import (
+from chauffeur_evader.chauffeur_classical import (
     DEFAULT_CONFIG,
     Policy,
     Rollout,
@@ -25,7 +25,7 @@ from RL.chauffeur_classical import (
     rollout_classical,
     rollout_feedback,
 )
-from RL.homicidal_chauffeur import GameConfig, is_captured
+from chauffeur_evader.homicidal_chauffeur import GameConfig, is_captured
 
 GRID_MIN, GRID_MAX, GRID_SCALE = -40, 40, 10
 TUNING_SEED, TUNING_COUNT = 42, 512
@@ -104,7 +104,7 @@ def evaluate_ppo(
     config: GameConfig = DEFAULT_CONFIG,
 ) -> list[EpisodeResult]:
     """Use the same decisions and opponent as the baselines, with PPO observations."""
-    from RL.chauffeur_ppo import ChauffeurPPOEnv
+    from chauffeur_evader.chauffeur_ppo import ChauffeurPPOEnv
 
     with ChauffeurPPOEnv(config) as env:
         return [_episode_result(rollout_feedback(start, env, pursuer=policy)) for start in starts]
@@ -245,7 +245,11 @@ def _save_maps(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=Path("data/chauffeur_baseline"))
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / "data/chauffeur_baseline",
+    )
     parser.add_argument("--checkpoint", type=Path, help="also evaluate an SB3 PPO checkpoint")
     args = parser.parse_args()
     output = args.output

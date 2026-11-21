@@ -170,10 +170,10 @@ The included runtime stack is:
 - `stable-baselines3` for future RL training and environment interface checks.
 
 The first mechanics-only stage of the homicidal-chauffeur game is documented in
-[`RL/README_chauffeur.md`](RL/README_chauffeur.md). Run its reproducible episode with:
+[`chauffeur-evader/README.md`](chauffeur-evader/README.md). Run its reproducible episode with:
 
 ```bash
-uv run --project .python_env --locked python -m RL.chauffeur_demo
+PYTHONPATH=chauffeur-evader uv run --project .python_env --locked python -m chauffeur_evader.chauffeur_demo
 ```
 
 Run the original MattChanTK 5x5 sample maze with:
@@ -301,7 +301,7 @@ python3 -m unittest discover -s tests -p test_c.py -v
 The game mechanics tests require the ML environment:
 
 ```bash
-uv run --project .python_env --locked python -m unittest discover -s tests -v
+PYTHONPATH=chauffeur-evader uv run --project .python_env --locked python -m unittest discover -s chauffeur-evader/tests -v
 ```
 
 After `./c native-sync`, verify every requested library and the active accelerator with:

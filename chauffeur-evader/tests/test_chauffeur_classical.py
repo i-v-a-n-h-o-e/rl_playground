@@ -5,13 +5,13 @@ from math import cos, pi, sin
 
 import numpy as np
 
-from RL.chauffeur_classical import (
+from chauffeur_evader.chauffeur_classical import (
     classical_evader,
     classical_feedback,
     classical_pursuer,
     rollout_classical,
 )
-from RL.chauffeur_theory import (
+from chauffeur_evader.chauffeur_theory import (
     BARRIER_END_TIME,
     USABLE_PART_ANGLE,
     arc,
@@ -19,7 +19,7 @@ from RL.chauffeur_theory import (
     geometry,
     tangential_barrier,
 )
-from RL.homicidal_chauffeur import GameConfig, HomicidalChauffeurEnv
+from chauffeur_evader.homicidal_chauffeur import GameConfig, HomicidalChauffeurEnv
 
 
 class ClassicalChauffeurTests(unittest.TestCase):

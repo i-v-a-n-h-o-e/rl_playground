@@ -54,4 +54,4 @@ target-version = "py312"
 "c" = ["UP045"]
 
 [tool.pytest.ini_options]
-testpaths = ["../tests"]
+testpaths = ["../tests", "../chauffeur-evader/tests"]

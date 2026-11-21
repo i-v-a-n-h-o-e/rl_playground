@@ -10,7 +10,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import ArrayLike
 
-from RL.chauffeur_theory import (
+from chauffeur_evader.chauffeur_theory import (
     A_TIME,
     BARRIER_END_TIME,
     BETA,
@@ -30,7 +30,7 @@ from RL.chauffeur_theory import (
     upper_value,
     wrap,
 )
-from RL.homicidal_chauffeur import (
+from chauffeur_evader.homicidal_chauffeur import (
     GameConfig,
     HomicidalChauffeurEnv,
     Observation,

@@ -18,15 +18,15 @@ from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.logger import configure
 from stable_baselines3.common.monitor import Monitor
 
-from RL.chauffeur_classical import DEFAULT_CONFIG, rollout_feedback
-from RL.chauffeur_evaluation import (
+from chauffeur_evader.chauffeur_classical import DEFAULT_CONFIG, rollout_feedback
+from chauffeur_evader.chauffeur_evaluation import (
     TUNING_SEED,
     EpisodeResult,
     compare,
     heuristic_pursuer,
     tuning_starts,
 )
-from RL.chauffeur_ppo import ChauffeurPPOEnv
+from chauffeur_evader.chauffeur_ppo import ChauffeurPPOEnv
 
 STEPS = 131_072
 SHORT_STEP = 0.001

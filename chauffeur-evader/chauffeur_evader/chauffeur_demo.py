@@ -7,7 +7,7 @@ import json
 
 import numpy as np
 
-from RL.homicidal_chauffeur import GameConfig, HomicidalChauffeurEnv
+from chauffeur_evader.homicidal_chauffeur import GameConfig, HomicidalChauffeurEnv
 
 
 def run_episode(

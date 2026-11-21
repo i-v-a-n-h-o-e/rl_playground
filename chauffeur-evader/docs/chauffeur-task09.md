@@ -94,16 +94,16 @@ GAE λ = 0,95 и ent_coef = 0. Старт — равномерно из квад
 Из корня репозитория:
 
 ```sh
-.python_env/.venv/bin/python -m RL.chauffeur_ppo_tuning \
-  --output data/chauffeur-task09/repeat-17 --seed 17
-.python_env/.venv/bin/python -m RL.chauffeur_ppo_tuning \
-  --output data/chauffeur-task09/repeat-reserve-17 --seed 17 --undiscounted
-.python_env/.venv/bin/python -m RL.chauffeur_ppo_tuning \
-  --output data/chauffeur-task09/recheck-report --checkpoint data/chauffeur-report/ppo.zip
+PYTHONPATH=chauffeur-evader .python_env/.venv/bin/python -m chauffeur_evader.chauffeur_ppo_tuning \
+  --output chauffeur-evader/data/chauffeur-task09/repeat-17 --seed 17
+PYTHONPATH=chauffeur-evader .python_env/.venv/bin/python -m chauffeur_evader.chauffeur_ppo_tuning \
+  --output chauffeur-evader/data/chauffeur-task09/repeat-reserve-17 --seed 17 --undiscounted
+PYTHONPATH=chauffeur-evader .python_env/.venv/bin/python -m chauffeur_evader.chauffeur_ppo_tuning \
+  --output chauffeur-evader/data/chauffeur-task09/recheck-report --checkpoint chauffeur-evader/data/chauffeur-report/ppo.zip
 ```
 
 Для исходного обучения можно распаковать `git archive c438987 RL` во временный
-каталог, скопировать туда текущий `RL/chauffeur_ppo_tuning.py` и запустить
+каталог, скопировать туда текущий `chauffeur-evader/chauffeur_evader/chauffeur_ppo_tuning.py` и запустить
 первую команду из этого каталога, передав абсолютные пути к Python и выходу.
 Исходное обучение завершилось и воспроизвело архивные веса. Контрольную
 оценку на неисправленной среде остановили после 119 из 512 стартов PPO: уже
@@ -111,8 +111,8 @@ GAE λ = 0,95 и ent_coef = 0. Старт — равномерно из квад
 неполный CSV не использован для сравнения долей. Архивный чекпойнт оценён
 отдельно в исправленной среде, общей для всех моделей.
 Модели, логи, метрики и исходы по каждому старту сохранены в
-`data/chauffeur-task09/` (локальные артефакты). Исходные `training.json`,
-`ppo.zip` и CSV в `data/chauffeur-report/` сохранены, SHA-256 совпадает.
+`chauffeur-evader/data/chauffeur-task09/` (локальные артефакты). Исходные `training.json`,
+`ppo.zip` и CSV в `chauffeur-evader/data/chauffeur-report/` сохранены, SHA-256 совпадает.
 
 Тест регрессии проверяет первое настоящее пересечение и отсутствие ложного
 повтора на обеих отражённых траекториях. Весь набор: 59 тестов прошли.

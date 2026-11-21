@@ -8,7 +8,7 @@
 
 ## Почему устройство модели не переносит среду
 
-- [`ChauffeurPPOEnv.step`](../RL/chauffeur_ppo.py) передаёт состояние в
+- [`ChauffeurPPOEnv.step`](../chauffeur_evader/chauffeur_ppo.py) передаёт состояние в
   `classical_feedback` и `step_feedback`. Те вычисляют управление пешехода,
   ищут первое пересечение оси, особых линий или круга захвата и при необходимости
   укорачивают шаг. Простой перенос формулы движения оставит эти расчёты на CPU.
@@ -30,7 +30,7 @@ NumPy 1.26.4, один поток PyTorch, `PYTORCH_ENABLE_MPS_FALLBACK` вык�
 
 ```bash
 env -u PYTORCH_ENABLE_MPS_FALLBACK \
-  uv run --project .python_env --locked python -m examples.benchmark_chauffeur_mps
+  PYTHONPATH=chauffeur-evader uv run --project .python_env --locked python -m examples.benchmark_chauffeur_mps
 ```
 
 В [`скрипте`](../examples/benchmark_chauffeur_mps.py) настройки из локального

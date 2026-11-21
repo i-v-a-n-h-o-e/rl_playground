@@ -1,6 +1,6 @@
 """Сравнение потенциальной добавки с базовой наградой."""
 
-from RL.chauffeur_task10.common import NETWORKS, parser, run
+from chauffeur_evader.chauffeur_task10.common import NETWORKS, parser, run
 
 if __name__ == "__main__":
     cli = parser(__doc__)

@@ -11,9 +11,9 @@ from pathlib import Path
 import torch
 from stable_baselines3 import PPO
 
-from RL.chauffeur_classical import classical_pursuer
-from RL.chauffeur_evaluation import compare, evaluate_pursuer, heuristic_pursuer
-from RL.chauffeur_task10.common import evaluate_model, save_episodes
+from chauffeur_evader.chauffeur_classical import classical_pursuer
+from chauffeur_evader.chauffeur_evaluation import compare, evaluate_pursuer, heuristic_pursuer
+from chauffeur_evader.chauffeur_task10.common import evaluate_model, save_episodes
 
 ROOT = Path(__file__).resolve().parents[2]
 FREEZE = ROOT / "experiments/chauffeur-task10-v1"

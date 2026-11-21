@@ -10,8 +10,8 @@ import numpy as np
 from matplotlib.lines import Line2D
 from matplotlib.patches import Circle
 
-from RL.chauffeur_demo import run_episode
-from RL.homicidal_chauffeur import GameConfig
+from chauffeur_evader.chauffeur_demo import run_episode
+from chauffeur_evader.homicidal_chauffeur import GameConfig
 
 
 def main() -> None:

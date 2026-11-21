@@ -11,14 +11,14 @@
 uv sync --project .python_env --locked --inexact
 ```
 
-Все скрипты записывают артефакты в `data/chauffeur-task10/`. Чтобы провести
+Все скрипты записывают артефакты в `chauffeur-evader/data/chauffeur-task10/`. Чтобы провести
 новую серию, передавайте один и тот же `--output /путь/к/каталогу` всем её
 скриптам. Каталог отдельного эксперимента должен быть новым.
 
 1. Измерьте разброс базового PPO с сетями управления и оценки 32×32:
 
    ```sh
-   .python_env/.venv/bin/python -m RL.chauffeur_task10.baseline
+   PYTHONPATH=chauffeur-evader .python_env/.venv/bin/python -m chauffeur_evader.chauffeur_task10.baseline
    ```
 
 2. Обучите PPO с сетью управления 64×64 и сетью оценки 32×32. Скрипт
@@ -26,7 +26,7 @@ uv sync --project .python_env --locked --inexact
    широкую сеть, если прирост повторяется на нескольких seed.
 
    ```sh
-   .python_env/.venv/bin/python -m RL.chauffeur_task10.width
+   PYTHONPATH=chauffeur-evader .python_env/.venv/bin/python -m chauffeur_evader.chauffeur_task10.width
    ```
 
 3. При устойчивом отставании от эвристики проверьте потенциальную добавку.
@@ -34,7 +34,7 @@ uv sync --project .python_env --locked --inexact
    с новой наградой и возьмёт контроль с базовой наградой из пункта 1 или 2.
 
    ```sh
-   .python_env/.venv/bin/python -m RL.chauffeur_task10.reward --architecture baseline
+   PYTHONPATH=chauffeur-evader .python_env/.venv/bin/python -m chauffeur_evader.chauffeur_task10.reward --architecture baseline
    ```
 
    Базовая награда: `1[capture] − dt / 20`. Добавка:
@@ -46,7 +46,7 @@ uv sync --project .python_env --locked --inexact
    версии её весов после обновлений на 131 072 и 262 144 решениях.
 
    ```sh
-   .python_env/.venv/bin/python -m RL.chauffeur_task10.length \
+   PYTHONPATH=chauffeur-evader .python_env/.venv/bin/python -m chauffeur_evader.chauffeur_task10.length \
      --architecture baseline --reward base
    ```
 
