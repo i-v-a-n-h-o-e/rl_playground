@@ -342,6 +342,14 @@ class Geometry:
         r = self.radius
         if x >= self.barrier.bounds[1] or y < self.y_l - 1:
             return False
+        if r > BETA and x <= self.wedge_barrier.bounds[1] + 2e-7:
+            # The SE leaves the barrier tangentially at G. Its gap can be
+            # smaller than the barrier polyline error on this arc.
+            coords = barrier_coordinates(z)
+            if coords is not None:
+                s, radius = coords
+                if self.s_g - TOL <= s <= self.s_h + TOL and abs(radius - r) <= 2e-7:
+                    return radius > r
         hits = self.barrier.ray_hits(x, y) + self.el.ray_hits(x, y)
         if -r <= y < r * GAMMA:
             hits += x < sqrt(max(0, r * r - y * y))

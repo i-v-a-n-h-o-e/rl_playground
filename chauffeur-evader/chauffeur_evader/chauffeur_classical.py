@@ -43,6 +43,8 @@ from chauffeur_evader.homicidal_chauffeur import (
 DEFAULT_CONFIG = GameConfig(gamma=GAMMA, beta=BETA)
 AXIS_TOLERANCE = 1e-9
 CONTACT_EPS = 5e-14
+PDL_MESH_TOL = 2e-6
+PDL_VALUE_TOL = 2e-7
 State = Point
 Policy = Callable[[State, GameConfig], float | None]
 Evader = Callable[[State, GameConfig, float], float | None]
@@ -190,22 +192,7 @@ def _away(z: State, g: Geometry) -> Feedback | None:
     return None
 
 
-def _throw(z: State, g: Geometry, away: Feedback) -> Feedback:
-    # The envelope and the curved dispersal line bound a small wedge.
-    if not 0.16 < z[0] < 0.20 or not 0.31 < z[1] < 0.57:
-        return away
-    pd = g.pdl.near(z, 2e-7)
-    se = g.se.near(z, 2e-7)
-    if se is not None:
-        return replace(away, branch="D" if se == g.se.times[-1] else "SE")
-    if (
-        pd is None
-        and (g.wedge_barrier.ray_hits(*z) + g.se.ray_hits(*z) + g.pdl.ray_hits(*z)) % 2 == 0
-    ):
-        return away
-    # The wedge is so narrow that the value comparison is needed as well:
-    # extending a characteristic beyond its first intersection with the PDL
-    # does not give an admissible positive turn.
+def _se_throw(z: State, g: Geometry) -> Feedback | None:
     candidates = []
     for t, a, p in radial_roots(z, 1, g.se_endpoint, [(0.0, g.se.times[-1])], splits=8):
         if a <= TOL or a > g.s_h - g.s_g + TOL:
@@ -216,10 +203,26 @@ def _throw(z: State, g: Geometry, away: Feedback) -> Feedback:
             candidates.append(
                 Feedback("throw_to_SE", 1, wrap(p + a), a + end.time_to_capture, (a, q))
             )
-    throw = min(candidates, key=lambda f: f.time_to_capture, default=None)
+    return min(candidates, key=lambda f: f.time_to_capture, default=None)
+
+
+def _throw(z: State, g: Geometry, away: Feedback) -> Feedback:
+    # The envelope and the curved dispersal line bound a small wedge.
+    if not 0.16 < z[0] < 0.20 or not 0.31 < z[1] < 0.57:
+        return away
+    se = g.se.near(z, 2e-7)
+    if se is not None:
+        return replace(away, branch="D" if se == g.se.times[-1] else "SE")
+    if (
+        g.pdl.near(z, PDL_MESH_TOL) is None
+        and (g.wedge_barrier.ray_hits(*z) + g.se.ray_hits(*z) + g.pdl.ray_hits(*z)) % 2 == 0
+    ):
+        return away
+    # Extending a throw past the PDL does not give an admissible positive turn.
+    throw = _se_throw(z, g)
     if throw is None:
         return away
-    if abs(throw.time_to_capture - away.time_to_capture) <= 2e-7:
+    if abs(throw.time_to_capture - away.time_to_capture) <= PDL_VALUE_TOL:
         return replace(throw, branch="curved_PDL", alternate_psi=away.psi)
     return throw if throw.time_to_capture < away.time_to_capture else away
 
@@ -551,6 +554,37 @@ def _line_event(
     return None
 
 
+def _pdl_event_time(path: Path, dt: float, t: float, g: Geometry, side: int) -> float | None:
+    """Refine a nearby mesh crossing to equality of the two characteristic values."""
+
+    def difference(t: float) -> float | None:
+        x, y = path(t)
+        z = side * x, y
+        away, throw = _away(z, g), _se_throw(z, g)
+        if away is not None and throw is not None:
+            return throw.time_to_capture - away.time_to_capture
+        return None
+
+    # The mesh supplies one initial secant point. Probe toward the interior
+    # of the step for the other, so crossings at a slice boundary work too.
+    previous = min(dt, t + 1e-6) if t <= dt / 2 else max(0.0, t - 1e-6)
+    prior = difference(previous)
+    for _ in range(8):
+        value = difference(t)
+        if value is None:
+            return None
+        if abs(value) <= PDL_VALUE_TOL / 10:
+            x, y = path(t)
+            return t if g.se.near((side * x, y), 2e-7) is None else None
+        if prior is None or value == prior:
+            return None
+        next_t = min(dt, max(0.0, t - value * (t - previous) / (value - prior)))
+        if next_t == t:
+            return None
+        previous, prior, t = t, value, next_t
+    return None
+
+
 def _line_event_slice(
     path: Path,
     dt: float,
@@ -594,6 +628,19 @@ def _line_event_slice(
                     return side * x - float(np.interp(y, section[:, 1], section[:, 0]))
 
                 before, after = gap(0), gap(dt)
+                if label == "curved_PDL":
+                    if before * after <= 0:
+                        estimate = bisect(gap, 0, dt)
+                    elif min(abs(before), abs(after)) <= PDL_MESH_TOL:
+                        estimate = 0.0 if abs(before) < abs(after) else dt
+                    else:
+                        continue
+                    t = _pdl_event_time(path, dt, estimate, g, side)
+                    if t is not None and t > 1e-9 and abs(gap(t)) <= PDL_MESH_TOL:
+                        x, y = path(t)
+                        if section[0, 1] <= y <= section[-1, 1]:
+                            events.append((t, label, (x, y)))
+                    continue
                 if abs(before) <= 2e-7:
                     continue
                 cut = dt
