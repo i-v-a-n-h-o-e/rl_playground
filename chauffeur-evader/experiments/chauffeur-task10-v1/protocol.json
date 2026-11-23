@@ -1,0 +1,125 @@
+{
+  "git_base": "806f01b84b2378950748d045308e968de7df33ee",
+  "source_sha256": {
+    ".python_env/.python-version": "7b55f8e67b5623c4bef3fa691288da9437d79d3aba156de48d481db32ac7d16d",
+    ".python_env/pyproject.toml": "910491dd531b55add7c2ecef1fb889fe84d1a003a970105ade6dec83371008e5",
+    ".python_env/uv.lock": "fec317d5ccd37f2f3de81e0de1d72a6b5f58af127583e87cc6460fd8f6017ee7",
+    "chauffeur-evader/chauffeur_evader/chauffeur_classical.py": "76dc8e82baa361fcdd76e16dcb662d8ae7c83036f4ae06a6cdf29ae7c703c278",
+    "chauffeur-evader/chauffeur_evader/chauffeur_evaluation.py": "36193d85af254436e7aa4f488cfa75348e498d54e720313d932efdb7fb4a2bda",
+    "chauffeur-evader/chauffeur_evader/chauffeur_ppo.py": "75394be9807d0bdd1ca7fe5062349bde3599a76e9591fb65027dc269a8f5d3a2",
+    "chauffeur-evader/chauffeur_evader/chauffeur_ppo_tuning.py": "27b6bc0fe2014a4a4db5db052818c29536e86df4c0c89c9920d54f301095e2b6",
+    "chauffeur-evader/chauffeur_evader/chauffeur_task10/__init__.py": "213821f34df0b8f3c7056993004ab3b741dcb435fe5aee84261177d0e077432a",
+    "chauffeur-evader/chauffeur_evader/chauffeur_task10/baseline.py": "d47346156e16428d848b96f76a0f6e737d9350f7277dceec99784f5806ff6e51",
+    "chauffeur-evader/chauffeur_evader/chauffeur_task10/common.py": "5f6d396c3db531cdff8d7ccdec9ba5aca4728129393bbb97858d835531e468ea",
+    "chauffeur-evader/chauffeur_evader/chauffeur_task10/compare_control.py": "1c715728a2a6100066454d038dd995e71e02579f5be1fef0159b8180762ef16b",
+    "chauffeur-evader/chauffeur_evader/chauffeur_task10/length.py": "ad82a2ff414e91a0218db6c4a4dd60adb1767a95619c7e418eebe26bc4074b69",
+    "chauffeur-evader/chauffeur_evader/chauffeur_task10/reward.py": "5759b870645d5007e0cf4bd7bb36c684868f9aa69d8d773738587c01d249a91c",
+    "chauffeur-evader/chauffeur_evader/chauffeur_task10/width.py": "62c9b02b6bc25f4b6e60a8e920e16aca522a38240061d219d50a0c0900fa6e15",
+    "chauffeur-evader/chauffeur_evader/chauffeur_theory.py": "a1b85e94b2947ef4a5db0eff5d7a2b5ba61fa41be53e94b7c4d1c67378943d9b",
+    "chauffeur-evader/chauffeur_evader/homicidal_chauffeur.py": "f2826d83712b8140bfd6361cd43247feddb736cca9f06a721d2b28f2be191e99",
+    "chauffeur-evader/docs/chauffeur-task10.md": "92337b61ba31af9a7c00c89dfe51aeef638bdbfe7ba0781bbc518e9bfb7586e3",
+    "chauffeur-evader/tests/test_chauffeur_task10.py": "4187694bb174181132d816ce94d8df9d58b747e3411e9f02638a174429ee3d23"
+  },
+  "checkpoint_environment": {
+    "OS": "macOS-15.7.9-arm64-arm-64bit Darwin Kernel Version 24.6.0: Tue Jul 21 20:51:05 PDT 2026; root:xnu-11417.140.69.711.44~1/RELEASE_ARM64_T6000",
+    "Python": "3.12.13",
+    "Stable-Baselines3": "2.9.2",
+    "PyTorch": "2.13.0",
+    "GPU Enabled": "False",
+    "Numpy": "1.26.4",
+    "Cloudpickle": "3.1.2",
+    "Gymnasium": "1.3.0",
+    "OpenAI Gym": "0.26.2"
+  },
+  "evaluation": {
+    "horizon": 20,
+    "mode": "first_contact",
+    "evader": "classical",
+    "deterministic": true,
+    "references": [
+      "heuristic",
+      "classical"
+    ],
+    "tuning": {
+      "file": "tuning_starts.csv",
+      "seed": 42,
+      "count": 512,
+      "sha256": "066112c229f6cfdd98bb07d75ebaef517bbbe0afc7e481e68873529e21a46ab4"
+    },
+    "holdout": {
+      "file": "holdout_starts.csv",
+      "seed": 20261119,
+      "generator": "numpy.random.PCG64",
+      "count": 2048,
+      "sha256": "e573ccf3b40861233ba85f8938ccd0b0d437267bf8373fa2580c78c723fc49fa",
+      "distribution": "uniform [-4,4]^2; reject capture disk, tuning starts, final grid and duplicates"
+    },
+    "final_grid": {
+      "min": -4,
+      "max": 4,
+      "step": 0.1,
+      "count": 6532
+    }
+  },
+  "training_seeds": {
+    "task10": [
+      17,
+      29,
+      43
+    ],
+    "confirmation": [
+      59,
+      71
+    ]
+  },
+  "control": {
+    "architecture": "wide",
+    "reward": "potential",
+    "potential_scale": 0.1,
+    "decisions": 262144,
+    "ppo": {
+      "device": "cpu",
+      "n_steps": 1024,
+      "gamma": 0.99,
+      "batch_size": 64,
+      "n_epochs": 10,
+      "learning_rate": 0.0003,
+      "gae_lambda": 0.95,
+      "ent_coef": 0.0,
+      "policy": "MlpPolicy",
+      "net_arch": {
+        "pi": [
+          64,
+          64
+        ],
+        "vf": [
+          32,
+          32
+        ]
+      }
+    },
+    "environment": {
+      "gamma": 0.5,
+      "beta": 0.3,
+      "dt": 0.05,
+      "horizon": 20.0,
+      "initial_low": -4.0,
+      "initial_high": 4.0
+    },
+    "torch_threads": 1,
+    "checkpoints": {
+      "17": {
+        "path": "data/chauffeur-task10/length-wide-potential/seed-17/ppo-262144.zip",
+        "sha256": "62ae0c4d07cf90bf59aa03e588d1b78b4d66a54fc9a71e7622fdfd75f323a3fb"
+      },
+      "29": {
+        "path": "data/chauffeur-task10/length-wide-potential/seed-29/ppo-262144.zip",
+        "sha256": "766e37d8b6a5a6197d9979e9d536aa565e5b6dd9cbb6ae0b318a4c4dca94fb3f"
+      },
+      "43": {
+        "path": "data/chauffeur-task10/length-wide-potential/seed-43/ppo-262144.zip",
+        "sha256": "090c5eb6950216a38cb896fca4cf349e43b5bf3c669e9dc48029111406581847"
+      }
+    }
+  }
+}
