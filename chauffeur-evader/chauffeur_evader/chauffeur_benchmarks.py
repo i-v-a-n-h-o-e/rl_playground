@@ -25,6 +25,8 @@ DRIVER_STYLES = {
     "classical": ("Classical", "#24679a", "-"),
     "heuristic": ("Heuristic", "#bb4e17", "--"),
     "ppo": ("PPO", "#17806a", "-."),
+    "archive": ("Archived PPO", "#86528c", ":"),
+    "new": ("New PPO", "#17806a", "-."),
 }
 
 
@@ -74,7 +76,7 @@ def _save_figure(
         )
 
     axes["xy"].plot(*start, marker="o", markersize=4, color="#253641")
-    fig.legend(handles=axes["x"].lines, loc="outside lower center", ncols=3, frameon=False)
+    fig.legend(handles=axes["x"].lines, loc="outside lower center", ncols=len(runs), frameon=False)
     fig.savefig(target, dpi=180)
     plt.close(fig)
 

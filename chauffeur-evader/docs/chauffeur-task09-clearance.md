@@ -133,3 +133,102 @@ OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=chauffeur-
 **Фраза для агента 07**
 
 > Возьми две регрессии из `chauffeur-evader/experiments/ppo-clearance-0001/task07_pdl_repro.py` и разбор в `chauffeur-evader/docs/chauffeur-task09-clearance.md`. В `chauffeur-evader/data/ppo-clearance-0001/full/trajectories.csv.gz` прочитай tuning № 22, heuristic, решения 60–62. В `chauffeur-evader/data/ppo-clearance-0001/task09-pdl/smoke-03/` открой episodes.csv и trajectories.csv.gz для P1, seed-43-ppo-2048, решения 567–568. Согласуй локализацию curved_PDL с выбором курса по фактическому рулю и классификацию стороны барьера на SE, проверь P1 и P4 и запусти полный сценарий из раздела «Запуск после исправления». Для передачи в 10 открой `chauffeur-evader/data/ppo-clearance-0001/task09-pdl/full-after-07/`, прочитай report.md, summary.json.models и models.sha256, затем episodes.csv, paired_capture_times.csv и траектории P1–P8. Сверь с исходным full/. Для выбора используй только tuning, 2 048 независимых стартов оставь до подтверждения.
+
+## Серия 09 после исправления среды
+
+На текущем коде обе регрессии 07 проходят. Сохранённая серия
+[full-after-07](../data/ppo-clearance-0001/task09-pdl/full-after-07/summary.json)
+совпадает с текущей средой, бюджетами и протоколом. Для всех трёх seed
+переиспользуются оба снимка. Конфигурация PPO остаётся `wide + potential`, как
+в 08. Исправлены выбор курса после `curved_PDL` и классификация на SE.
+Архитектура, награда и скидка сохранены. Для массовой оценки заранее выбран
+**seed 43, 262 144 решения**, SHA-256
+`4bf6c421f6be879571c0dbfe184304f284bf225856289a0666f667e08d9641d2`.
+
+### Сохранённые исходы на 512 tuning-стартах
+
+| Решения | Seed 17 · захваты / тайм-ауты / unsupported | Seed 29 | Seed 43 | Среднее число захватов | Диапазон |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 131 072 | 306 / 206 / 0 | 10 / 502 / 0 | 313 / 199 / 0 | 209,67 (40,95 %) | 10–313 (1,95–61,13 %) |
+| 262 144 | 313 / 199 / 0 | 268 / 244 / 0 | 311 / 201 / 0 | 297,33 (58,07 %) | 268–313 (52,34–61,13 %) |
+
+На этих стартах у классики 512 захватов, у эвристики 311, у архивного PPO 0.
+В сохранённом прогоне 09 на бюджете 262 144 пересечение тайм-аутов трёх seed
+содержит 198 стартов. На P4, P5, P6 и P8 все три тоже получили тайм-аут,
+классика поймала на каждом. На P5 все три PPO с первого решения выбирают
+φ = +1 при ψ ≈ −0,841069. Классика начинает с φ = −1, выходит на ось в t =
+0,841069 и ловит в t = 17,482090. На tuning № 1 та же смена знака при ψ ≈
+−1,103893, классика ловит в 14,103541. Это повторяющийся провал обхода. Ранее
+наблюдавшиеся ошибку курса после `curved_PDL`, потерю курса на SE и серии
+коротких шагов можно проверить отдельно по кодам событий и фактическому
+управлению. [Эпизоды 09](../data/ppo-clearance-0001/task09-pdl/full-after-07/episodes.csv) ·
+[Траектории 09](../data/ppo-clearance-0001/task09-pdl/full-after-07/trajectories.csv.gz) ·
+[Передача в «Исследование»](https://app.notion.com/p/41b2971d9e99812182e0f82ec38eefdf)
+
+Сопоставление уже записанных исходов 08 и 09 показывает совместный эффект
+замены среды обучения и оценщика. Оба прогона использовали зазор 0,001.
+Знаки «+ / −» обозначают захваты только 09 и только 08. Разность времени
+считается только на указанных общих захватах.
+
+| Решения | Seed | Захваты 08 → 09 | + / − | Общие захваты | Среднее t₀₉ − t₀₈ |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 131 072 | 17 | 312 → 306 | 4 / 10 | 302 | +0,264114 |
+| 131 072 | 29 | 0 → 10 | 10 / 0 | 0 | — |
+| 131 072 | 43 | 305 → 313 | 9 / 1 | 304 | −0,016050 |
+| 262 144 | 17 | 311 → 313 | 2 / 0 | 311 | +0,085608 |
+| 262 144 | 29 | 0 → 268 | 268 / 0 | 0 | — |
+| 262 144 | 43 | 311 → 311 | 2 / 2 | 309 | −0,167937 |
+
+Для сравнения **при одном оценщике** сценарий ниже заново проигрывает все
+шесть пар 08/09 и три эталона на одних и тех же 512 tuning-стартах. Затем он
+оценивает четыре политики на общей сетке 6 532 стартов и P1–P8. Отложенные
+2 048 стартов зарезервированы для подтверждения.
+
+### Пользовательский запуск
+
+Рабочий каталог для обеих команд — корень репозитория
+`/Users/ivanosipov/src/rl_playground`. Входы:
+
+- `chauffeur-evader/experiments/chauffeur-task10-v1/protocol.json` и `tuning_starts.csv`.
+- Два локальных прогона `chauffeur-evader/data/ppo-clearance-0001/full/` (08)
+  и `chauffeur-evader/data/ppo-clearance-0001/task09-pdl/full-after-07/` (09).
+  В обоих читаются `summary.json`, `models.sha256`, копии протокола и стартов,
+  `seed-*/settings.json` и оба ZIP каждого seed. Для 09 сверяются также хеши
+  кода среды и обучения из `source-sha256.json`.
+- Архивный PPO
+  `chauffeur-evader/data/chauffeur-task10/length-wide-potential/seed-43/ppo-262144.zip`.
+  Конфигурация и ожидаемый SHA-256 заданы в замороженном протоколе.
+- Сетка и P1–P8 определены в `chauffeur_evaluation.py` и `chauffeur_benchmarks.py`.
+
+Массовая оценка создаёт новый каталог `task09-driver-report`. Признак
+завершения — строка `Evaluation complete:` и `status: complete`, `mode: full`
+в `manifest.json`. Ожидаются 33 840 эпизодов и 36 полных траекторий для P1–P8
+и бывшей серой ячейки.
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=chauffeur-evader \
+  .python_env/.venv/bin/python chauffeur-evader/experiments/ppo-clearance-0001/evaluate_drivers.py \
+  chauffeur-evader/data/ppo-clearance-0001/task09-driver-report
+```
+
+Сборка повторно читает CSV и проверяет сетку, пары, исходы, времена и хеши.
+Она записывает `report.md`, `tuning-pairs.csv` (3 072 пары) и `figures/`.
+Флаг `--publish` переносит проверенный отчёт в
+`chauffeur-evader/docs/driver-comparison.md`, а PNG в его каталог
+`figures/ppo-clearance-0001/`. Признаки успеха — строки `Updated` и
+`Verified full report:`.
+
+```bash
+MPLBACKEND=Agg PYTHONPATH=chauffeur-evader \
+  .python_env/.venv/bin/python chauffeur-evader/experiments/ppo-clearance-0001/build_driver_report.py \
+  chauffeur-evader/data/ppo-clearance-0001/task09-driver-report --publish
+```
+
+Короткий прогон проверен с `--smoke` в команде оценки, путём
+`chauffeur-evader/data/ppo-clearance-0001/task09-driver-report-smoke` и
+командой сборки без `--publish`. С диска прочитаны 252 эпизода, 48 пар
+08/09 и 36 траекторий. Проверены десять PNG. [Отчёт короткого прогона](../data/ppo-clearance-0001/task09-driver-report-smoke/report.md)
+
+**Фраза для следующего агента**
+
+> Открой `chauffeur-evader/data/ppo-clearance-0001/task09-driver-report/`. В `manifest.json` проверь `complete/full`, 512 tuning-стартов, 6 532 точки сетки, P1–P8 и соответствие `models.new` заранее выбранному seed 43 на 262 144 решениях. Проверь `report.md` по `episodes.csv` и `tuning-pairs.csv`, включая unsupported, тайм-ауты и знаменатели времени на общих захватах. По `trajectories.csv` сверь восемь реперов и старт (−2,3; −0,2) с PNG. Обнови `chauffeur-evader/docs/driver-comparison.md` командой сборки с `--publish`, если это ещё не сделано. Для «Исследования» прочти веса, настройки и траектории всех трёх seed в `chauffeur-evader/data/ppo-clearance-0001/task09-pdl/full-after-07/`, особенно P4, P5, P6, P8 и tuning № 1.
