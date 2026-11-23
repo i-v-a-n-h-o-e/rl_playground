@@ -426,3 +426,7 @@ OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=chauffeur-
 > `paired_capture_times.csv` и открой P1–P8 в `trajectories.csv.gz`.
 > Сопоставь оба бюджета каждого seed с архивным PPO seed 43, эвристикой
 > и классикой по захватам, тайм-аутам, `unsupported` и времени общих захватов.
+
+Полный запуск разобран в [отчёте 09 по зазору 0,001](docs/chauffeur-task09-clearance.md).
+Там приведены парные исходы на 512 стартах, траектории P1–P8, две короткие
+регрессии для задачи 07 и команда пересчёта после исправления пешехода.
