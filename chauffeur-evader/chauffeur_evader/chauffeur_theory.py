@@ -51,6 +51,19 @@ def direction(p: float) -> Point:
     return sin(p), cos(p)
 
 
+def barrier_coordinates(z: Point) -> Point | None:
+    """Normal coordinates (s, radius) of the parallel family b_radius(s)."""
+    x, y = z
+    d = hypot(1 - x, y)
+    if d <= GAMMA:
+        return None
+    # (1-x, -y) = h e(p_b) + gamma e'(p_b) on this sheet.
+    h = sqrt((d - GAMMA) * (d + GAMMA))
+    p = (atan2(1 - x, -y) - atan2(GAMMA, h)) % (2 * pi)
+    s = p - USABLE_PART_ANGLE
+    return s, sin(USABLE_PART_ANGLE) + GAMMA * s - h
+
+
 def rotate(x: float, y: float, angle: float) -> Point:
     c, s = cos(angle), sin(angle)
     return x * c + y * s, y * c - x * s
@@ -342,12 +355,12 @@ def contact_roots(z: Point, endpoint: Callable, alpha_m: float):
     return radial_roots(z, -1, endpoint, [(0.0, pi / 2), (pi / 2, alpha_m)], splits=4)
 
 
-def circle_segment(lo: float, hi: float, radius: float) -> float:
+def circle_segment(lo: float, hi: float, radius: float, phi: float = -1) -> float:
     # alpha = acos(cos(theta)/gamma) removes the square-root singularity at Q.
     def integrand(alpha: float) -> float:
         theta = acos(GAMMA * cos(alpha))
         dtheta = GAMMA * sin(alpha) / sin(theta)
-        return radius * dtheta / (radius + sin(theta) - GAMMA * sin(alpha))
+        return radius * dtheta / (sin(theta) - GAMMA * sin(alpha) - phi * radius)
 
     return (hi - lo) * (integrand(lo) + 4 * integrand((lo + hi) / 2) + integrand(hi)) / 6
 

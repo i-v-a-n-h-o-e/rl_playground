@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from math import cos, pi, sin
+from math import atan2, cos, hypot, pi, sin, sqrt
 
 import numpy as np
 
@@ -16,6 +16,8 @@ from chauffeur_evader.chauffeur_theory import (
     USABLE_PART_ANGLE,
     arc,
     axis_arc,
+    barrier_coordinates,
+    flow,
     geometry,
     tangential_barrier,
 )
@@ -222,6 +224,158 @@ class ClassicalChauffeurTests(unittest.TestCase):
             self.assertLess(prior, expanded.trajectory[-1].time)
             prior = expanded.trajectory[-1].time
         self.assertAlmostEqual(prior, opened.trajectory[-1].time, delta=0.0011)
+
+    def test_off_nominal_p4_contact_and_departure(self) -> None:
+        # Seed 43 at t=1, before its next sampled steering decision.
+        z = (0.27991134764129716, 0.12293859570612813)
+        rho, phi = 0.301, 0.9054176807403564
+        initial = classical_feedback(z, virtual_radius=rho)
+        self.assertEqual((initial.branch, initial.phi), ("turn_to_contact", -1))
+        run = rollout_classical(
+            z,
+            GameConfig(horizon=1.5),
+            virtual_radius=rho,
+            pursuer=lambda state, _: phi if state == z else 1,
+        )
+        hit, following = run.trajectory[1:3]
+        self.assertEqual(hit.event, "virtual_entry")
+        self.assertAlmostEqual(hit.time, 0.036148675, places=9)
+        self.assertAlmostEqual(hypot(*hit.state), rho, places=13)
+        self.assertAlmostEqual(following.psi, 0.469786958, places=8)
+        self.assertEqual(run.outcome, "time_limit")
+        m = next(i for i, pt in enumerate(run.trajectory) if pt.event == "M")
+        for pt in run.trajectory[1 : m + 1]:
+            self.assertAlmostEqual(hypot(*pt.state), rho, places=13)
+        self.assertAlmostEqual(run.trajectory[m + 1].psi, -geometry(rho).a_m)
+        self.assertGreater(hypot(*run.trajectory[m + 1].state), rho)
+        self.assertTrue(all(b.time > a.time for a, b in zip(run.trajectory, run.trajectory[1:])))
+
+    def test_circle_angular_speed_for_applied_steering(self) -> None:
+        theta, rho, dt = 1.45, 0.301, 1e-6
+        for side in (-1, 1):
+            for phi in (-1, 0, 1):
+                z = side * rho * sin(theta), rho * cos(theta)
+                run = rollout_classical(
+                    z,
+                    GameConfig(dt=dt, horizon=dt),
+                    pursuer=lambda *_, turn=phi: turn,
+                    virtual_radius=rho,
+                )
+                (end,) = run.trajectory[1:]
+                vx, vy = flow(z, phi, end.psi)
+                self.assertAlmostEqual(z[0] * vx + z[1] * vy, 0, places=13)
+                self.assertAlmostEqual(hypot(*end.state), rho, places=13)
+                omega = (sin(theta) - sqrt(0.5**2 - cos(theta) ** 2)) / rho - side * phi
+                self.assertAlmostEqual(
+                    (atan2(abs(end.state[0]), end.state[1]) - theta) / dt, omega, delta=1e-5
+                )
+
+    def test_virtual_tangency_transverse_entry_and_competing_axis(self) -> None:
+        rho = 0.301
+        tangent = rollout_classical(
+            (rho, 0.01),
+            GameConfig(horizon=0.04),
+            pursuer=lambda *_: 0,
+            evader=lambda *_: 0,
+            virtual_radius=rho,
+        )
+        self.assertEqual(tangent.trajectory[1].event, "safe_contact")
+        self.assertAlmostEqual(tangent.trajectory[1].time, 0.02)
+        self.assertEqual(len(tangent.trajectory), 3)
+
+        axis = rollout_classical(
+            (-0.002, 0.32),
+            GameConfig(horizon=0.01),
+            pursuer=lambda *_: 0,
+            evader=lambda *_: pi / 2,
+            virtual_radius=rho,
+        )
+        self.assertEqual(axis.trajectory[1].event, "axis")
+        self.assertAlmostEqual(axis.trajectory[1].time, 0.004)
+        transverse = rollout_classical((0, 0.31), virtual_radius=rho)
+        self.assertEqual(
+            [pt.event for pt in transverse.trajectory], [None, "virtual_entry", "contact"]
+        )
+        self.assertAlmostEqual(transverse.trajectory[1].time, 0.018)
+        self.assertAlmostEqual(transverse.trajectory[-1].time, 0.020)
+
+    def test_first_of_two_grazing_entries_inside_one_step(self) -> None:
+        # The distance has two minima below rho and an intervening maximum above it.
+        start = (0.3009351118084666, 0.006250722586164961)
+        run = rollout_classical(
+            start,
+            GameConfig(horizon=0.05),
+            virtual_radius=0.301,
+            pursuer=lambda *_: 0.8306478377719341,
+            evader=lambda *_: 0.020766195944298352,
+        )
+        self.assertEqual(run.trajectory[1].event, "virtual_entry")
+        self.assertAlmostEqual(run.trajectory[1].time, 0.007060982, delta=2e-9)
+
+    def test_virtual_barrier_from_both_sides_and_on_the_line(self) -> None:
+        rho, s = 0.301, 1.0
+        x, y = geometry(rho).b(s)
+        pb = USABLE_PART_ANGLE + s
+        config = GameConfig(horizon=0.03)
+        for side in (-1, 1):
+            for offset, phi in ((0.002, 1), (-0.002, -1), (0, -1), (0, 0), (0, 1)):
+                z = side * (x + offset * sin(pb)), y + offset * cos(pb)
+                run = rollout_classical(
+                    z, config, pursuer=lambda *_, turn=side * phi: turn, virtual_radius=rho
+                )
+                if offset:
+                    self.assertEqual(run.trajectory[1].event, "barrier")
+                contact, end = run.trajectory[-2:]
+                s_hit, radius = barrier_coordinates((side * contact.state[0], contact.state[1]))
+                self.assertAlmostEqual(radius, rho, places=13)
+                p = USABLE_PART_ANGLE + s_hit
+                vx, vy = flow(contact.state, end.phi, end.psi)
+                normal = side * sin(p) * vx + cos(p) * vy
+                if phi == 1:
+                    self.assertAlmostEqual(normal, 0, places=13)
+                    ex, ey = geometry(rho).b(s_hit - (end.time - contact.time))
+                    np.testing.assert_allclose(end.state, (side * ex, ey), atol=1e-13, rtol=0)
+                else:
+                    self.assertGreater(normal, 0)
+                    self.assertTrue(geometry(rho).slow_side((side * end.state[0], end.state[1])))
+            # Exact starts on the true barrier use the closed-target convention of §8.
+            for s_true in (0.35, 1.0):
+                bx, by = geometry().b(s_true)
+                z = side * bx, by
+                run = rollout_classical(z, config, virtual_radius=rho)
+                self.assertAlmostEqual(run.trajectory[1].psi, classical_feedback(z).psi)
+
+            x0, y0 = geometry().b(1.0)
+            # This true slow-side start has only half the requested normal gap.
+            near = side * (x0 + 0.0005 * sin(pb)), y0 + 0.0005 * cos(pb)
+            run = rollout_classical(near, config, virtual_radius=rho, pursuer=lambda *_, p=side: p)
+            hit = next(pt for pt in run.trajectory if pt.event == "barrier")
+            _, chosen_radius = barrier_coordinates((side * hit.state[0], hit.state[1]))
+            self.assertAlmostEqual(chosen_radius, 0.30025, places=13)
+            for turn in (-1, 0):
+                z = side * x0, y0
+                run = rollout_classical(
+                    z, config, virtual_radius=rho, pursuer=lambda *_, phi=side * turn: phi
+                )
+                vx, vy = flow(z, run.trajectory[1].phi, run.trajectory[1].psi)
+                self.assertGreater(side * sin(pb) * vx + cos(pb) * vy, 0)
+
+    def test_p4_heuristic_guard_reaches_virtual_tangency(self) -> None:
+        rho = 0.301
+        start = (0.45, 1)
+        for radius in (0.3, rho):
+            self.assertTrue(geometry(radius).slow_side(start))
+        # The bearing is positive and saturated over the entire tested arc.
+        run = rollout_classical(
+            start, GameConfig(horizon=1.15), pursuer=lambda *_: 1, virtual_radius=rho
+        )
+        hit = next(pt for pt in run.trajectory if pt.event == "barrier")
+        self.assertAlmostEqual(hit.time, 0.116569934, places=8)
+        q = next(pt for pt in run.trajectory if pt.event == "safe_contact")
+        s_hit, _ = barrier_coordinates(hit.state)
+        self.assertAlmostEqual(q.time - hit.time, s_hit, places=12)
+        np.testing.assert_allclose(q.state, geometry(rho).b(0), atol=1e-13, rtol=0)
+        self.assertAlmostEqual(hypot(*run.trajectory[-1].state), rho, places=13)
 
     def test_feedback_uses_the_same_capture_boundary_as_reset(self) -> None:
         env = HomicidalChauffeurEnv()

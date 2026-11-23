@@ -57,6 +57,16 @@ class ChauffeurEvaluationTests(unittest.TestCase):
         self.assertIsNone(candidate[1].capture_time)
         self.assertIsNone(candidate[2].capture_time)
 
+    def test_evaluation_uses_protected_pedestrian_and_can_replay_original(self) -> None:
+        start = (0.45, 1.0)
+        (protected,) = evaluate_pursuer(heuristic_pursuer, [start])
+        self.assertEqual(protected.outcome, "time_limit")
+        self.assertEqual(
+            evaluate_ppo(lambda z, c, _: heuristic_pursuer(z, c), [start]), [protected]
+        )
+        (original,) = evaluate_pursuer(heuristic_pursuer, [start], clearance=0)
+        self.assertAlmostEqual(original.capture_time, 1.460551, places=6)
+
     def test_heuristic_nearly_zero_steering_during_capture(self) -> None:
         # The event must remain well conditioned as the steering approaches zero.
         (result,) = evaluate_pursuer(heuristic_pursuer, [(0.1, 2.3)])

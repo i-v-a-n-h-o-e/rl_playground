@@ -88,8 +88,8 @@ def main() -> None:
     args.output.mkdir(parents=True)
     references = {
         "control": evaluate_model(control, starts),
-        "heuristic": evaluate_pursuer(heuristic_pursuer, starts),
-        "classical": evaluate_pursuer(classical_pursuer, starts),
+        "heuristic": evaluate_pursuer(heuristic_pursuer, starts, clearance=0),
+        "classical": evaluate_pursuer(classical_pursuer, starts, clearance=0),
     }
     episodes = evaluate_model(candidate, starts)
     for name, results in {"candidate": episodes, **references}.items():

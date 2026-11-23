@@ -61,18 +61,25 @@ class PotentialRewardEnv(ChauffeurPPOEnv):
 
 
 class TrainingSnapshots(TrainingDiagnostics):
-    def __init__(self, midpoint: Path | None):
+    def __init__(self, checkpoints: dict[int, Path]):
         super().__init__()
-        self.midpoint = midpoint
+        self.checkpoints = checkpoints
 
     def _on_rollout_start(self) -> None:
         # The previous rollout has already been used for an optimizer update.
-        if self.midpoint is not None and self.model.num_timesteps == STEPS:
-            self.model.save(self.midpoint)
+        checkpoint = self.checkpoints.get(self.model.num_timesteps)
+        if checkpoint is not None:
+            self.model.save(checkpoint)
 
 
 def train(
-    output: Path, seed: int, architecture: str, reward: str, budgets: tuple[int, ...]
+    output: Path,
+    seed: int,
+    architecture: str,
+    reward: str,
+    budgets: tuple[int, ...],
+    *,
+    clearance: float = 0.0,
 ) -> None:
     output.mkdir()
     net_arch = NETWORKS[architecture]
@@ -83,15 +90,16 @@ def train(
         "reward": reward,
         "ppo": {**PPO_SETTINGS, "policy": "MlpPolicy", "net_arch": net_arch},
         "environment": asdict(DEFAULT_CONFIG),
+        "clearance": clearance,
         "stable_baselines3": stable_baselines3.__version__,
         "torch": torch.__version__,
         "torch_threads": torch.get_num_threads(),
         "tuning_seed": TUNING_SEED,
     }
     (output / "settings.json").write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
-    midpoint = output / f"ppo-{STEPS}.zip" if len(budgets) == 2 else None
-    diagnostics = TrainingSnapshots(midpoint)
-    env = PotentialRewardEnv() if reward == "potential" else ChauffeurPPOEnv()
+    diagnostics = TrainingSnapshots({steps: output / f"ppo-{steps}.zip" for steps in budgets[:-1]})
+    env_type = PotentialRewardEnv if reward == "potential" else ChauffeurPPOEnv
+    env = env_type(clearance=clearance)
     with Monitor(env, filename=str(output / "training")) as monitored:
         model = PPO(
             "MlpPolicy", monitored, seed=seed, policy_kwargs={"net_arch": net_arch}, **PPO_SETTINGS
@@ -109,16 +117,20 @@ def train(
     (output / "training.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
 
-def evaluate(checkpoint: Path, starts: list[State]) -> list[EpisodeResult]:
-    return evaluate_model(PPO.load(checkpoint, device="cpu"), starts)
+def evaluate(
+    checkpoint: Path, starts: list[State], *, clearance: float = 0.0
+) -> list[EpisodeResult]:
+    return evaluate_model(PPO.load(checkpoint, device="cpu"), starts, clearance=clearance)
 
 
-def evaluate_model(model: PPO, starts: list[State]) -> list[EpisodeResult]:
+def evaluate_model(
+    model: PPO, starts: list[State], *, clearance: float = 0.0
+) -> list[EpisodeResult]:
     def predict(_state, _config, observation):
         action, _ = model.predict(observation, deterministic=True)
         return float(action.item())
 
-    return evaluate_ppo(predict, starts)
+    return evaluate_ppo(predict, starts, clearance=clearance)
 
 
 def save_episodes(path: Path, episodes: list[EpisodeResult]) -> None:
@@ -203,7 +215,10 @@ def run(
     architecture: str,
     reward: str = "base",
     reference: Path | None = None,
-    long: bool = False,
+    budgets: tuple[int, ...] = (STEPS,),
+    seeds: tuple[int, ...] = SEEDS,
+    frozen_controls: dict[int, Path] | None = None,
+    clearance: float = 0.0,
 ) -> None:
     if output.exists():
         raise SystemExit(f"Каталог уже существует: {output}. Выберите новую серию через --output.")
@@ -212,27 +227,39 @@ def run(
     if reference is not None:
         if not (reference / "report.md").is_file():
             raise SystemExit(f"Сначала завершите контрольный эксперимент: {reference}")
-        for seed in SEEDS:
+        for seed in seeds:
             controls[seed] = read_episodes(reference / f"seed-{seed}/episodes-{STEPS}.csv", starts)
         heuristic = read_episodes(reference / "heuristic.csv", starts)
     else:
-        heuristic = evaluate_ppo(lambda state, config, _: heuristic_pursuer(state, config), starts)
-    classical = evaluate_pursuer(classical_pursuer, starts)
+        heuristic = evaluate_ppo(
+            lambda state, config, _: heuristic_pursuer(state, config), starts, clearance=clearance
+        )
+    classical = evaluate_pursuer(classical_pursuer, starts, clearance=clearance)
 
     output.mkdir(parents=True)
     save_episodes(output / "heuristic.csv", heuristic)
     save_episodes(output / "classical.csv", classical)
     torch.set_num_threads(1)
-    budgets = (STEPS, 2 * STEPS) if long else (STEPS,)
+    frozen_controls = frozen_controls or {}
+    if frozen_controls:
+        (output / "control-checkpoints.json").write_text(
+            json.dumps({seed: str(path) for seed, path in frozen_controls.items()}, indent=2)
+            + "\n",
+            encoding="utf-8",
+        )
     groups = defaultdict(list)
-    for seed in SEEDS:
+    for seed in seeds:
         directory = output / f"seed-{seed}"
         print(f"Seed {seed}: train for {budgets[-1]} decisions", flush=True)
-        train(directory, seed, architecture, reward, budgets)
+        train_budgets = budgets[1:] if seed in frozen_controls else budgets
+        train(directory, seed, architecture, reward, train_budgets, clearance=clearance)
         results = {}
         for steps in budgets:
             print(f"Seed {seed}: evaluate checkpoint at {steps} decisions", flush=True)
-            episodes = evaluate(directory / f"ppo-{steps}.zip", starts)
+            checkpoint = directory / f"ppo-{steps}.zip"
+            if steps == budgets[0] and seed in frozen_controls:
+                checkpoint = frozen_controls[seed]
+            episodes = evaluate(checkpoint, starts, clearance=clearance)
             save_episodes(directory / f"episodes-{steps}.csv", episodes)
             results[steps] = episodes
             label = f"PPO ({steps} решений)"
@@ -242,9 +269,9 @@ def run(
             groups[output.name, reference.name].append(
                 (seed, compare(results[STEPS], controls[seed]))
             )
-        if long:
-            groups[f"PPO ({2 * STEPS} решений)", f"PPO ({STEPS} решений)"].append(
-                (seed, compare(results[2 * STEPS], results[STEPS]))
+        if len(budgets) > 1:
+            groups[f"PPO ({budgets[-1]} решений)", f"PPO ({budgets[0]} решений)"].append(
+                (seed, compare(results[budgets[-1]], results[budgets[0]]))
             )
     path = output / "report.md"
     path.write_text(

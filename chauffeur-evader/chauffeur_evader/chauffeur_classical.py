@@ -21,7 +21,9 @@ from chauffeur_evader.chauffeur_theory import (
     Point,
     arc,
     axis_arc,
+    barrier_coordinates,
     bisect,
+    circle_segment,
     el_controls,
     flow,
     geometry,
@@ -40,12 +42,18 @@ from chauffeur_evader.homicidal_chauffeur import (
 
 DEFAULT_CONFIG = GameConfig(gamma=GAMMA, beta=BETA)
 AXIS_TOLERANCE = 1e-9
+CONTACT_EPS = 5e-14
 State = Point
 Policy = Callable[[State, GameConfig], float | None]
 Evader = Callable[[State, GameConfig, float], float | None]
 RolloutPolicy = Callable[[State, GameConfig, Observation], float | None]
 Path = Callable[[float], State]
 Mode = Literal["first_contact", "merz"]
+
+
+def _barrier_normal(p: float, phi: float, psi: float) -> float:
+    """Velocity toward the slow side, in right-half-plane coordinates."""
+    return (1 - phi) * (GAMMA - cos(p)) - 2 * GAMMA * sin((psi - p) / 2) ** 2
 
 
 @dataclass(frozen=True)
@@ -58,11 +66,19 @@ class Feedback:
     junction: tuple[float, State] | None = None
     # At a dispersal line the other steering direction has its own course.
     alternate_psi: float | None = None
+    # Reflection and parameter on the protective (positive-clearance) barrier.
+    guard: tuple[int, float] | None = None
 
     def response(self, phi: float) -> float | None:
+        psi = self.psi
         if self.alternate_psi is not None and (phi < 0) != (self.phi < 0):
-            return self.alternate_psi
-        return self.psi
+            psi = self.alternate_psi
+        if self.guard is not None:
+            side, s = self.guard
+            p = USABLE_PART_ANGLE + s
+            if _barrier_normal(p, side * phi, side * psi) <= 0:
+                return wrap(side * p)
+        return psi
 
 
 def _check_parameters(config: GameConfig) -> None:
@@ -209,25 +225,13 @@ def _throw(z: State, g: Geometry, away: Feedback) -> Feedback:
 
 
 def _barrier_parameter(z: State, g: Geometry, tol: float = 2e-8) -> float | None:
-    s = g.barrier.near(z, 2e-7)
-    if s is None:
+    coords = barrier_coordinates(z)
+    if coords is None:
         return None
-
-    # Refine the projection on the exact characteristic, independent of the mesh.
-    def residual(t: float) -> float:
-        x, y = g.b(t)
-        p = USABLE_PART_ANGLE + t
-        return (z[0] - x) * cos(p) - (z[1] - y) * sin(p)
-
-    lo, hi = max(0.0, s - 0.002), min(BARRIER_END_TIME, s + 0.002)
-    if residual(lo) * residual(hi) < 0:
-        s = bisect(residual, lo, hi)
-    elif s < 1e-6:
-        s = 0.0
-    elif BARRIER_END_TIME - s < 1e-6:
-        s = BARRIER_END_TIME
-    x, y = g.b(s)
-    return s if hypot(z[0] - x, z[1] - y) <= tol else None
+    s, radius = coords
+    if -tol <= s <= BARRIER_END_TIME + tol and abs(radius - g.radius) <= tol:
+        return min(BARRIER_END_TIME, max(0.0, s))
+    return None
 
 
 def classical_feedback(
@@ -253,24 +257,28 @@ def classical_feedback(
         return Feedback("capture", None, None, 0.0)
 
     radius = BETA if virtual_radius is None else virtual_radius
-    if hypot(x, y) < radius - TOL and virtual_radius is not None:
+    if hypot(x, y) < radius - CONTACT_EPS and virtual_radius is not None:
         radius = BETA  # Finish a transverse entry against the true target.
     g = geometry(radius)
     side = -1 if x < 0 else 1
     z = abs(x), y
-    if mode == "merz" or virtual_radius is not None:
+    s = _barrier_parameter(z, g, CONTACT_EPS if radius > BETA else 2e-8)
+    rear_circle = False
+    if mode == "merz" or radius > BETA:
         distance = hypot(*z)
         if distance < radius - TOL:
             return Feedback("capture", None, None, 0.0)
-        if abs(distance - radius) <= TOL:
+        if abs(distance - radius) <= CONTACT_EPS:
             theta = atan2(*z)
-            if theta < USABLE_PART_ANGLE - TOL:
+            if theta < USABLE_PART_ANGLE - CONTACT_EPS:
                 if radius == BETA:
                     return Feedback("capture", None, None, 0.0)
-                return classical_feedback(state, config)
-            if theta <= g.alpha_m - g.a_m + TOL:
+                if s is None:
+                    return classical_feedback(state, config)
+                # Just before Q, r-rho is quadratic and can round to zero.
+            elif theta <= g.alpha_m - g.a_m + CONTACT_EPS:
                 alpha = acos(max(-1.0, min(1.0, cos(theta) / GAMMA)))
-                if abs(alpha - g.alpha_m) <= 1e-7:
+                if abs(alpha - g.alpha_m) <= 1e-12:
                     q = (0.0, g.y_m)
                     return Feedback(
                         "M",
@@ -281,11 +289,13 @@ def classical_feedback(
                     )
                 _, p = g.contact(alpha)
                 return Feedback("safe_contact", -side, wrap(side * p), g.value_at_contact(alpha))
+            else:
+                rear_circle = True  # Continue on the outgoing side of the critical arc.
 
     if z[0] <= AXIS_TOLERANCE:
         if y > radius:
             return Feedback("UL", 0, 0, (y - radius) / (1 - GAMMA))
-        if g.y_l + TOL < y < -radius:
+        if g.y_l + TOL < y and (y < -radius or rear_circle):
             a = (y - g.y_l) / (1 - GAMMA)
             return Feedback(
                 "lower_UL", 0, 0, a + upper_value((0, g.y_l), radius), (a, (0.0, g.y_l))
@@ -299,7 +309,6 @@ def classical_feedback(
         return None
 
     f = None
-    s = _barrier_parameter(z, g)
     if s is not None:
         label = next(
             (
@@ -314,7 +323,7 @@ def classical_feedback(
             ),
             "barrier",
         )
-        if mode == "first_contact" and virtual_radius is None:
+        if mode == "first_contact" and radius == BETA:
             if s <= A_TIME + 1e-8:
                 f = Feedback(label, 1, wrap(USABLE_PART_ANGLE + s), s, (s, g.b(0)))
             else:
@@ -340,7 +349,7 @@ def classical_feedback(
         f = _upper(z, g, "EL")
         if slide_el and f is not None:
             f = replace(f, phi=el_controls(z)[0], psi=el_controls(z)[1], junction=None)
-    elif g.slow_side(z):
+    elif rear_circle or g.slow_side(z):
         f = _away(z, g)
         if f is not None:
             f = _throw(z, g, f)
@@ -359,6 +368,8 @@ def classical_feedback(
             a, (qx, qy) = junction
             junction = a, (-qx, qy)
         f = replace(f, phi=-f.phi, psi=p, alternate_psi=alt, junction=junction)
+    if f is not None and s is not None and radius > BETA and s < BARRIER_END_TIME:
+        f = replace(f, guard=(side, s))
     return f
 
 
@@ -406,31 +417,111 @@ def _path(state: State, phi: float, psi: float) -> Path:
     )
 
 
-def _capture_time(path: Path, phi: float, psi: float, length: float) -> float | None:
-    if hypot(*path(0)) > BETA + (1 + GAMMA) * length + 1e-12:
+def _circle_hit(
+    path: Path, phi: float, psi: float, length: float, radius: float
+) -> tuple[float, str] | None:
+    """First positive-time circle event on the applied inertial course."""
+    if abs(hypot(*path(0)) - radius) > (1 + GAMMA) * length + CONTACT_EPS:
         return None
 
     def clearance(t: float) -> float:
-        return hypot(*path(t)) - BETA
+        return hypot(*path(t)) - radius
 
     def radial(t: float) -> float:
         x, y = path(t)
         p = psi - phi * t
         return GAMMA * (x * sin(p) + y * cos(p)) - y
 
-    # Split at a minimum as well as testing the endpoints: a tangency does
-    # not change the sign of the distance to the circle.
+    def cuts(lo: float, hi: float):
+        # D = (r²/2)'. A grazing turn can have two minima and a maximum
+        # inside one decision, even with equal endpoint clearances.
+        mid, half = (lo + hi) / 2, (hi - lo) / 2
+        x, y = path(mid)
+        p = psi - phi * mid
+        slope = 1 + GAMMA**2 - 2 * GAMMA * cos(p) - phi * x
+        curvature = phi**2 * y - 3 * GAMMA * phi * sin(p)
+        max_r = hypot(x, y) + (1 + GAMMA) * half
+        third = phi**2 * (abs(phi) * max_r + 1 + 4 * GAMMA)
+        variation = half * (abs(curvature) + half * third / 2)
+        if abs(slope) > variation:
+            if radial(lo) * radial(hi) < 0:
+                yield bisect(radial, lo, hi)
+        elif abs(radial(mid)) <= half * (abs(slope) + variation):
+            if half**2 * (abs(slope) + variation) <= CONTACT_EPS * radius / 4:
+                yield mid
+            else:
+                yield from cuts(lo, mid)
+                yield from cuts(mid, hi)
+                return
+        yield hi
+
     slices = max(1, ceil(length / (0.05 + 1e-12)))
     for i in range(slices):
         lo, hi = i * length / slices, (i + 1) * length / slices
-        if radial(lo) < 0 < radial(hi):
-            hi = bisect(radial, lo, hi)
-        gap = clearance(hi)
-        if gap < -5e-14:
-            return bisect(clearance, lo, hi)
-        if gap <= 5e-14:
-            return hi
+        for end in cuts(lo, hi):
+            before, after = clearance(lo), clearance(end)
+            departing = abs(before) <= CONTACT_EPS and not (radius == BETA and before > 0)
+            if not departing and before * after < 0 and abs(after) > CONTACT_EPS:
+                return bisect(clearance, lo, end), "entry" if before > 0 else "exit"
+            if abs(before) > CONTACT_EPS and abs(after) <= CONTACT_EPS:
+                speed = radial(end)
+                kind = "tangent" if abs(speed) < 1e-12 else ("entry" if speed < 0 else "exit")
+                return end, kind
+            lo = end
     return None
+
+
+def _guard_crossing(
+    path: Path, dt: float, g: Geometry, side: int, phi: float, psi: float
+) -> tuple[float, str, State] | None:
+    """First intersection with the smooth parallel barrier in a <= 0.05 slice."""
+    turn = side * phi
+    x, y = path(dt / 2)
+    d = hypot(1 - side * x, y)
+    # The distance to the turn center changes at speed at most 1-turn+gamma.
+    reach = (1 - turn + GAMMA) * dt / 2
+    h0 = sin(USABLE_PART_ANGLE) - g.radius
+    if d + reach < hypot(h0, GAMMA) or d - reach > hypot(h0 + GAMMA * BARRIER_END_TIME, GAMMA):
+        return None
+
+    def coordinates(t: float) -> Point:
+        x, y = path(t)
+        return barrier_coordinates((side * x, y))
+
+    def gap(t: float) -> float:
+        return coordinates(t)[1] - g.radius
+
+    # The normal chart's angle wraps outside the physical barrier segment.
+    start, end = coordinates(0), coordinates(dt)
+    if abs(start[0] - end[0]) > pi:
+        return None
+
+    # In normal coordinates h²=d²-gamma². For u=1-turn and a=psi-p,
+    # N' = -turn*u*sin(p) - (u*sin(p)+gamma*sin(a))²/h.
+    h_min = ((d - reach) ** 2 - GAMMA**2) ** 0.5
+
+    def first(lo: float, hi: float):
+        mid, half = (lo + hi) / 2, (hi - lo) / 2
+        p = USABLE_PART_ANGLE + coordinates(mid)[0]
+        course = side * (psi - phi * mid)
+        speed = _barrier_normal(p, turn, course)
+        sin_bound = min(1, abs(sin(course - p)) + half * (1 - turn + GAMMA) / h_min)
+        slope_bound = abs(turn) * (1 - turn) + (1 - turn + GAMMA * sin_bound) ** 2 / h_min
+        spread = half * (abs(speed) + half * slope_bound / 2)
+        if abs(gap(mid)) > spread + CONTACT_EPS:
+            return None
+        if turn != 1 and abs(speed) <= half * slope_bound and spread > CONTACT_EPS:
+            return first(lo, mid) or first(mid, hi)
+        left, right = gap(lo), gap(hi)
+        if abs(left) > CONTACT_EPS and (left * right < 0 or abs(right) <= CONTACT_EPS):
+            t = hi if abs(right) <= CONTACT_EPS else bisect(gap, lo, hi)
+            s = coordinates(t)[0]
+            if 0 <= s <= BARRIER_END_TIME:
+                x, y = g.b(s)
+                return t, "barrier", (side * x, y)
+        return None
+
+    return first(0, dt)
 
 
 def _line_event(
@@ -439,17 +530,21 @@ def _line_event(
     g: Geometry,
     phi: float,
     psi: float,
+    *,
+    guard_only: bool,
 ) -> tuple[float, str, State] | None:
     slices = max(1, ceil(dt / (0.05 + 1e-12)))
     for i in range(slices):
         left = i * dt / slices
-        event = _line_event_slice(
-            path if i == 0 else lambda t, left=left: path(left + t),
-            dt / slices,
-            g,
-            phi,
-            psi - phi * left,
-        )
+        segment = path if i == 0 else lambda t, left=left: path(left + t)
+        length, course = dt / slices, psi - phi * left
+        events = []
+        if not guard_only:
+            events.append(_line_event_slice(segment, length, g, phi, course))
+        if g.radius > BETA:
+            for side in (1, -1):
+                events.append(_guard_crossing(segment, length, g, side, phi, course))
+        event = min((e for e in events if e is not None), key=lambda e: e[0], default=None)
         if event is not None:
             t, label, point = event
             return left + t, label, point
@@ -482,6 +577,8 @@ def _line_event_slice(
                 events.append((t, "axis", (0.0, y)))
     curves = (("barrier", g.barrier), ("EL", g.el), ("SE", g.se), ("curved_PDL", g.pdl))
     for label, curve in curves:
+        if label == "barrier" and g.radius > BETA:
+            continue  # The protective barrier is intersected analytically.
         for side in (1, -1):
             xlo, xhi = sorted((side * start[0], side * end[0]))
             ylo, yhi = sorted((start[1], end[1]))
@@ -585,31 +682,59 @@ def step_feedback(
 
     rho = (
         virtual_radius
-        if virtual_radius is not None and hypot(*state) >= virtual_radius - TOL
+        if virtual_radius is not None and hypot(*state) >= virtual_radius - CONTACT_EPS
         else BETA
     )
     g = geometry(rho)
-    nominal = feedback is not None and phi == feedback.phi and psi == feedback.response(phi)
+    nominal = feedback is not None and phi == feedback.phi and psi == feedback.psi
     path = _path(state, phi, psi)
     junction = feedback.junction if nominal else None
     event = None
     endpoint = None
     contact_mode = mode == "first_contact" or virtual_radius is not None
 
-    if nominal and feedback.branch == "safe_contact":
+    side = -1 if state[0] < 0 else 1
+    on_circle = feedback is not None and feedback.branch == "safe_contact" and evader is None
+    on_guard = (
+        feedback is not None and feedback.guard is not None and side * phi == 1 and evader is None
+    )
+    slide = nominal and (
+        feedback.branch == "SE_follow" or (slide_el and feedback.branch in ("EL", "L"))
+    )
+    if on_circle:
         theta = atan2(abs(state[0]), state[1])
         alpha = acos(max(-1.0, min(1.0, cos(theta) / GAMMA)))
-        remaining_on_circle = g.circle_duration(alpha)
-        if remaining_on_circle <= dt:
-            dt, event = remaining_on_circle, "M"
-            end_alpha = g.alpha_m
-        else:
-            end_alpha = bisect(
-                lambda a: g.circle_duration(a) - (remaining_on_circle - dt), alpha, g.alpha_m
+
+        def travel(end: float) -> float:
+            if side * phi == -1:
+                return g.circle_duration(alpha) - g.circle_duration(end)
+            # Simpson quadrature in alpha is regular even at Q.
+            n = max(1, ceil((end - alpha) / 0.02))
+            h = (end - alpha) / n
+            return sum(
+                circle_segment(alpha + i * h, alpha + (i + 1) * h, rho, side * phi)
+                for i in range(n)
             )
-        endpoint = g.contact(end_alpha)[0]
-        if state[0] < 0:
-            endpoint = -endpoint[0], endpoint[1]
+
+        duration = travel(g.alpha_m)
+        if duration <= dt:
+            dt, event, end_alpha = duration, "M", g.alpha_m
+        else:
+            end_alpha = bisect(lambda a: travel(a) - dt, alpha, g.alpha_m)
+        x, y = g.contact(end_alpha)[0]
+        endpoint = side * x, y
+    elif on_guard:
+        # The only viable course for this steering is p_b. Its inertial heading
+        # is constant and its exact forward characteristic is b(s-t).
+        _, s = feedback.guard
+        for target, label in sorted(
+            ((g.s_h, "H"), (rho / GAMMA, "A"), (g.s_g, "G"), (0, "contact")), reverse=True
+        ):
+            if (target == 0 or s - target > 1e-12) and 0 < s - target <= dt:
+                dt, event = s - target, label
+                break
+        x, y = g.b(max(0.0, s - dt))
+        endpoint = side * x, y
     elif nominal and feedback.branch == "SE_follow":
         _, t = g.se.project((abs(state[0]), state[1]))
         if t <= dt:
@@ -643,31 +768,43 @@ def step_feedback(
                 "contact" if hypot(*endpoint) <= rho + TOL else "barrier",
             )
         )
+    # Nominal inversions supply their own junction. Check the protective
+    # barrier on every free move, including a nominal fast-side course.
+    known_junction = nominal and (junction is not None or feedback.branch == "UL")
+    search_lines = endpoint is None and not known_junction
+    if search_lines or (rho > BETA and not (on_circle or on_guard or slide)):
+        crossing = _line_event(path, dt, g, phi, psi, guard_only=not search_lines)
+        if crossing is not None:
+            dt, event, endpoint = crossing
     if endpoint is None:
-        # For nominal characteristics all intervening events are known from
-        # the inversion. Alternate controls can cross other special lines.
-        if not nominal or (junction is None and feedback.branch != "UL"):
-            crossing = _line_event(path, dt, g, phi, psi)
-            if crossing is not None:
-                dt, event, endpoint = crossing
-        if endpoint is None:
-            endpoint = path(dt)
+        endpoint = path(dt)
 
     terminal = False
-    if contact_mode and not (nominal and feedback.branch == "safe_contact"):
-        if event == "contact" and rho == BETA:
-            terminal = True
-        else:
-            capture = _capture_time(path, phi, psi, dt)
-            if capture is not None:
-                dt, endpoint, terminal, event = capture, path(capture), True, "contact"
-    elif (event != "contact" and hypot(*endpoint) < BETA - TOL) or (
-        hypot(*endpoint) <= BETA + 5e-14
-        and atan2(abs(endpoint[0]), endpoint[1]) < USABLE_PART_ANGLE - TOL
-    ):
-        capture = _capture_time(path, phi, psi, dt)
-        dt = dt if capture is None else capture
-        endpoint, terminal, event = path(dt), True, "contact"
+    if not on_circle and not slide:
+        if virtual_radius is not None and not on_guard:
+            hit = _circle_hit(path, phi, psi, dt, virtual_radius)
+            if hit is not None:
+                dt, kind = hit
+                endpoint = path(dt)
+                event = {
+                    "entry": "virtual_entry",
+                    "exit": "virtual_exit",
+                    "tangent": "safe_contact",
+                }[kind]
+        if contact_mode:
+            terminal = event == "contact" and rho == BETA
+            if not terminal:
+                hit = _circle_hit(path, phi, psi, dt, BETA)
+                if hit is not None:
+                    dt = hit[0]
+                    endpoint, terminal, event = path(dt), True, "contact"
+        elif (event != "contact" and hypot(*endpoint) < BETA - TOL) or (
+            hypot(*endpoint) <= BETA + CONTACT_EPS
+            and atan2(abs(endpoint[0]), endpoint[1]) < USABLE_PART_ANGLE - TOL
+        ):
+            hit = _circle_hit(path, phi, psi, dt, BETA)
+            dt = dt if hit is None else hit[0]
+            endpoint, terminal, event = path(dt), True, "contact"
     if event == "contact" and not terminal:
         event = "safe_contact"
     return env._finish_step(
@@ -679,6 +816,87 @@ def step_feedback(
         event,
         remaining - dt <= 1e-12,
     )
+
+
+def requested_radius(config: GameConfig, clearance: float) -> float | None:
+    if not isfinite(clearance) or clearance < 0:
+        raise ValueError("Clearance must be finite and nonnegative")
+    return config.beta + clearance if clearance else None
+
+
+class FeedbackEpisode:
+    """Keep the selected pedestrian radius for one episode."""
+
+    def __init__(self, requested_radius: float | None):
+        if requested_radius is not None and (
+            not isfinite(requested_radius) or requested_radius <= BETA
+        ):
+            raise ValueError("The virtual radius must exceed beta")
+        self.requested_radius = requested_radius
+        self.virtual_radius: float | None = None
+
+    def step(
+        self,
+        env: HomicidalChauffeurEnv,
+        action: ArrayLike | None,
+        *,
+        use_reference: bool = False,
+        evader: Evader | None = None,
+        mode: Mode = "first_contact",
+        slide_el: bool = False,
+        follow_se: bool = False,
+    ) -> Transition:
+        env._require_active()
+        state = tuple(map(float, env.state))
+        config = env.config
+        # Choose rho once there is room for it. An exact true-barrier start
+        # uses the closed-target rule until the first move off that line.
+        true_barrier = None
+        side = -1 if state[0] < 0 else 1
+        if self.requested_radius is not None and self.virtual_radius is None:
+            coords = barrier_coordinates((abs(state[0]), state[1]))
+            room = hypot(*state) - BETA
+            if coords is not None and -CONTACT_EPS <= coords[0] <= BARRIER_END_TIME + CONTACT_EPS:
+                gap = coords[1] - BETA
+                if abs(gap) <= CONTACT_EPS:
+                    true_barrier = side, min(BARRIER_END_TIME, max(0.0, coords[0]))
+                    room = 0.0
+                elif gap > 0:
+                    room = min(room, gap)
+            if self.requested_radius - BETA <= room + CONTACT_EPS:
+                self.virtual_radius = self.requested_radius
+            elif room > 2 * CONTACT_EPS:
+                self.virtual_radius = BETA + room / 2
+        f = classical_feedback(
+            state,
+            config,
+            mode=mode,
+            slide_el=slide_el,
+            follow_se=follow_se,
+            virtual_radius=self.virtual_radius,
+        )
+        if use_reference:
+            action = f.phi if f else None
+        if (
+            true_barrier is not None
+            and 0 < true_barrier[1] < BARRIER_END_TIME
+            and action is not None
+            and side * env._control(action, 1.0, "phi") < 1
+            and mode == "first_contact"
+            and evader is None
+        ):
+            slow = classical_feedback(state, config, mode="merz")
+            if slow is not None:
+                f = replace(slow, guard=true_barrier)
+        return step_feedback(
+            env,
+            action,
+            feedback=f,
+            evader=evader,
+            mode=mode,
+            slide_el=slide_el,
+            virtual_radius=self.virtual_radius,
+        )
 
 
 def rollout_feedback(
@@ -697,29 +915,20 @@ def rollout_feedback(
     _check_parameters(config)
     if (mode == "first_contact" and is_captured(start, config.beta)) or hypot(*start) < BETA - TOL:
         return Rollout("capture", (TrajectoryPoint(0.0, start),))
-    if virtual_radius is not None and not config.beta < virtual_radius < hypot(*start):
-        raise ValueError("The virtual radius must be between beta and the initial distance")
+    episode = FeedbackEpisode(virtual_radius)
     observation, info = env.reset(options={"state": start, "allow_contact": mode == "merz"})
     state = tuple(map(float, info["state"]))
     trajectory = [TrajectoryPoint(0.0, state)]
     while True:
-        f = classical_feedback(
-            state,
-            config,
-            mode=mode,
-            slide_el=slide_el,
-            follow_se=follow_se,
-            virtual_radius=virtual_radius,
-        )
-        action = (f.phi if f else None) if pursuer is None else pursuer(state, config, observation)
-        observation, _, terminated, truncated, info = step_feedback(
+        action = None if pursuer is None else pursuer(state, config, observation)
+        observation, _, terminated, truncated, info = episode.step(
             env,
             action,
-            feedback=f,
+            use_reference=pursuer is None,
             evader=evader,
             mode=mode,
             slide_el=slide_el,
-            virtual_radius=virtual_radius,
+            follow_se=follow_se,
         )
         if info["dt"] > 0:
             state = tuple(map(float, info["state"]))

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 from collections import Counter
-from collections.abc import Callable, Iterable, Sequence
-from dataclasses import asdict, dataclass
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from dataclasses import asdict, dataclass, replace
 from math import atan2
 from pathlib import Path
 from statistics import mean
@@ -22,6 +23,7 @@ from chauffeur_evader.chauffeur_classical import (
     RolloutPolicy,
     State,
     classical_pursuer,
+    requested_radius,
     rollout_classical,
     rollout_feedback,
 )
@@ -29,6 +31,7 @@ from chauffeur_evader.homicidal_chauffeur import GameConfig, is_captured
 
 GRID_MIN, GRID_MAX, GRID_SCALE = -40, 40, 10
 TUNING_SEED, TUNING_COUNT = 42, 512
+DEFAULT_CLEARANCE = 0.001
 Outcome = Literal["capture", "time_limit", "unsupported"]
 
 
@@ -76,6 +79,7 @@ def evaluate_pursuer(
     starts: Iterable[State],
     config: GameConfig = DEFAULT_CONFIG,
     *,
+    clearance: float = DEFAULT_CLEARANCE,
     rollout: Callable[[Policy, State, GameConfig], Rollout] | None = None,
 ) -> list[EpisodeResult]:
     """Apply one episode protocol to a feedback policy on each start.
@@ -85,29 +89,62 @@ def evaluate_pursuer(
     pass a rollout accepting the pursuer, start and config and returning the
     trajectory from reset. Use the same rollout for every compared policy.
     """
-    results = []
+    return [
+        _episode_result(run)
+        for run in _pursuer_rollouts(pursuer, starts, config, rollout, clearance=clearance)
+    ]
+
+
+def _pursuer_rollouts(
+    pursuer: Policy,
+    starts: Iterable[State],
+    config: GameConfig,
+    rollout: Callable[[Policy, State, GameConfig], Rollout] | None = None,
+    *,
+    clearance: float = DEFAULT_CLEARANCE,
+) -> Iterator[Rollout]:
+    radius = requested_radius(config, clearance)
     for start in starts:
-        run = (
-            rollout_classical(
-                start, config, pursuer=None if pursuer is classical_pursuer else pursuer
-            )
-            if rollout is None
-            else rollout(pursuer, start, config)
-        )
-        results.append(_episode_result(run))
-    return results
+        if rollout is None:
+            yield rollout_classical(start, config, pursuer=pursuer, virtual_radius=radius)
+        else:
+            yield rollout(pursuer, start, config)
 
 
 def evaluate_ppo(
     policy: RolloutPolicy,
     starts: Iterable[State],
     config: GameConfig = DEFAULT_CONFIG,
+    *,
+    clearance: float = DEFAULT_CLEARANCE,
 ) -> list[EpisodeResult]:
     """Use the same decisions and opponent as the baselines, with PPO observations."""
+    return [
+        _episode_result(run) for run in _ppo_rollouts(policy, starts, config, clearance=clearance)
+    ]
+
+
+def _ppo_rollouts(
+    policy: RolloutPolicy,
+    starts: Iterable[State],
+    config: GameConfig,
+    *,
+    clearance: float = DEFAULT_CLEARANCE,
+) -> Iterator[Rollout]:
     from chauffeur_evader.chauffeur_ppo import ChauffeurPPOEnv
 
+    radius = requested_radius(config, clearance)
     with ChauffeurPPOEnv(config) as env:
-        return [_episode_result(rollout_feedback(start, env, pursuer=policy)) for start in starts]
+        for start in starts:
+            yield rollout_feedback(start, env, pursuer=policy, virtual_radius=radius)
+
+
+def _outcome_summary(counts: Counter, total: int) -> dict:
+    captures = counts["capture"]
+    return {
+        "counts": {outcome: counts[outcome] for outcome in ("capture", "time_limit", "unsupported")},
+        "capture_rate_bounds": [captures / total, (captures + counts["unsupported"]) / total],
+    }
 
 
 def compare(candidate: Sequence[EpisodeResult], reference: Sequence[EpisodeResult]) -> dict:
@@ -147,16 +184,9 @@ def compare(candidate: Sequence[EpisodeResult], reference: Sequence[EpisodeResul
     for index, (name, counts) in enumerate(
         (("candidate", candidate_counts), ("reference", reference_counts))
     ):
-        captures = counts["capture"]
         paired_captures = sum(pair[index].outcome == "capture" for pair in both_resolved)
         summary[name] = {
-            "counts": {
-                outcome: counts[outcome] for outcome in ("capture", "time_limit", "unsupported")
-            },
-            "capture_rate_bounds": [
-                captures / total,
-                (captures + counts["unsupported"]) / total,
-            ],
+            **_outcome_summary(counts, total),
             "capture_rate_on_both_resolved": (
                 paired_captures / len(both_resolved) if both_resolved else None
             ),
@@ -245,41 +275,111 @@ def _save_maps(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--dt", type=float, default=DEFAULT_CONFIG.dt)
     parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path(__file__).resolve().parents[1] / "data/chauffeur_baseline",
+        "--clearance",
+        type=float,
+        default=DEFAULT_CLEARANCE,
+        help="pedestrian clearance above beta (0 replays the original protocol)",
     )
-    parser.add_argument("--checkpoint", type=Path, help="also evaluate an SB3 PPO checkpoint")
+    ppo_option = parser.add_mutually_exclusive_group()
+    ppo_option.add_argument("--checkpoint", type=Path, help="also evaluate an SB3 PPO checkpoint")
+    ppo_option.add_argument(
+        "--audited-ppo", action="store_true", help="evaluate the verified Task 10 checkpoint (seed 43)"
+    )
+    ppo_option.add_argument(
+        "--benchmarks", action="store_true", help="plot P1–P8 with the verified Task 10 checkpoint"
+    )
     args = parser.parse_args()
-    output = args.output
+    root = Path(__file__).resolve().parents[1]
+    output = args.output or root / "data" / (
+        "evaluation-benchmarks" if args.benchmarks else "chauffeur_baseline"
+    )
+
+    checkpoint = args.checkpoint
+    audited_settings = {}
+    if args.audited_ppo or args.benchmarks:
+        protocol_path = root / "experiments/chauffeur-task10-v1/protocol.json"
+        control = json.loads(protocol_path.read_text(encoding="utf-8"))["control"]
+        entry = control["checkpoints"]["43"]
+        checkpoint = root / entry["path"]
+        try:
+            with checkpoint.open("rb") as file:
+                digest = hashlib.file_digest(file, "sha256").hexdigest()
+        except OSError as error:
+            parser.error(str(error))
+        if digest != entry["sha256"]:
+            parser.error(f"Checkpoint SHA-256 does not match the audit: {checkpoint}")
+        audited_settings = {
+            "sha256": digest,
+            "architecture": control["architecture"],
+            "training_reward": control["reward"],
+        }
 
     import matplotlib
 
     matplotlib.use("Agg")
-    config = DEFAULT_CONFIG
-    starts = final_grid()
-    heuristic = evaluate_pursuer(heuristic_pursuer, starts, config)
-    classical = evaluate_pursuer(classical_pursuer, starts, config)
-    summary = compare(heuristic, classical)
-    output.mkdir(parents=True, exist_ok=True)
-    policies = {"heuristic": heuristic, "classical": classical}
-    extra = {}
-    if args.checkpoint is not None:
+    config = replace(DEFAULT_CONFIG, dt=args.dt)
+    run_settings = {
+        "config": asdict(config),
+        "evader": "classical_evader",
+        "mode": "first_contact",
+        "clearance": args.clearance,
+    }
+    predict = None
+    if checkpoint is not None:
         from stable_baselines3 import PPO
 
-        model = PPO.load(args.checkpoint, device="cpu")
+        model = PPO.load(checkpoint, device="cpu")
 
         def predict(_state, _config, observation):
             action, _ = model.predict(observation, deterministic=True)
             return float(action.item())
 
-        ppo = evaluate_ppo(predict, starts, config)
+        run_settings["checkpoint"] = str(checkpoint)
+        run_settings["ppo"] = {
+            "seed": model.seed,
+            "num_timesteps": model.num_timesteps,
+            "device": "cpu",
+            "deterministic": True,
+            **audited_settings,
+        }
+        if args.benchmarks:
+            from chauffeur_evader.chauffeur_benchmarks import BENCHMARKS, save_benchmarks
+
+            starts = tuple(BENCHMARKS.values())
+            runs = {
+                "classical": list(
+                    _pursuer_rollouts(classical_pursuer, starts, config, clearance=args.clearance)
+                ),
+                "heuristic": list(
+                    _pursuer_rollouts(heuristic_pursuer, starts, config, clearance=args.clearance)
+                ),
+                "ppo": list(_ppo_rollouts(predict, starts, config, clearance=args.clearance)),
+            }
+            save_benchmarks(output, runs, config)
+            (output / "benchmark_run.json").write_text(
+                json.dumps(run_settings, indent=2) + "\n", encoding="utf-8"
+            )
+            print(f"Saved trajectories and figures for {len(starts)} benchmarks to {output}")
+            return
+
+    starts = final_grid()
+    heuristic = evaluate_pursuer(heuristic_pursuer, starts, config, clearance=args.clearance)
+    classical = evaluate_pursuer(classical_pursuer, starts, config, clearance=args.clearance)
+    comparisons = {("heuristic", "classical"): compare(heuristic, classical)}
+    output.mkdir(parents=True, exist_ok=True)
+    policies = {"heuristic": heuristic, "classical": classical}
+    extra = {}
+    if predict is not None:
+        ppo = evaluate_ppo(predict, starts, config, clearance=args.clearance)
         policies["ppo"] = ppo
+        comparisons["ppo", "heuristic"] = compare(ppo, heuristic)
+        comparisons["ppo", "classical"] = compare(ppo, classical)
         extra = {
-            "checkpoint": str(args.checkpoint),
-            "ppo_vs_heuristic": compare(ppo, heuristic),
-            "ppo_vs_classical": compare(ppo, classical),
+            "ppo_vs_heuristic": comparisons["ppo", "heuristic"],
+            "ppo_vs_classical": comparisons["ppo", "classical"],
         }
         _save_maps(
             output / "ppo_vs_heuristic.png",
@@ -306,21 +406,69 @@ def main() -> None:
         writer = csv.writer(file)
         writer.writerow(("x", "y"))
         writer.writerows(tuning_starts())
+    policy_summaries = {
+        name: _outcome_summary(Counter(result.outcome for result in results), len(results))
+        for name, results in policies.items()
+    }
     report = {
-        "config": asdict(config),
+        **run_settings,
         "grid": {
             "min": GRID_MIN / GRID_SCALE,
             "max": GRID_MAX / GRID_SCALE,
             "step": 1 / GRID_SCALE,
+            "count": len(starts),
         },
         "tuning": {"seed": TUNING_SEED, "count": TUNING_COUNT},
         "candidate": "heuristic_pursuer",
         "reference": "classical_pursuer",
-        "evader": "classical_evader",
-        "metrics": summary,
+        "policies": policy_summaries,
+        "metrics": comparisons["heuristic", "classical"],
         **extra,
     }
     (output / "summary.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    lines = [
+        "# Chauffeur evaluation",
+        "",
+        f"{len(starts):,} fixed starts per policy against the classical evader, "
+        f"with first-contact capture and T = {config.horizon:g}.",
+    ]
+    if checkpoint is not None:
+        lines += [
+            "",
+            f"PPO checkpoint `{checkpoint.name}`, training seed {model.seed}, "
+            f"{model.num_timesteps:,} training steps. Inference uses deterministic actions on CPU.",
+        ]
+    lines += [
+        "",
+        "| Driver | Captures | Time limits | Unsupported | Capture rate bounds |",
+        "| --- | ---: | ---: | ---: | ---: |",
+    ]
+    for name, metrics in policy_summaries.items():
+        counts = metrics["counts"]
+        low, high = metrics["capture_rate_bounds"]
+        lines.append(
+            f"| {name} | {counts['capture']} | {counts['time_limit']} | {counts['unsupported']} "
+            f"| [{low:.2%}, {high:.2%}] |"
+        )
+    lines += [
+        "",
+        "Differences are candidate minus reference. Mean time differences use shared captures.",
+        "",
+        "| Candidate | Reference | Capture rate difference (pp) | Resolved pairs | "
+        "Status disagreements | Outcome disagreements on resolved pairs | Shared captures | "
+        "Mean capture time difference |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for (candidate, reference), metrics in comparisons.items():
+        low, high = metrics["capture_rate_delta_bounds"]
+        dt = metrics["mean_capture_time_delta"]
+        time_delta = "—" if dt is None else f"{dt:+.3f}"
+        lines.append(
+            f"| {candidate} | {reference} | [{100 * low:+.2f}, {100 * high:+.2f}] "
+            f"| {metrics['both_resolved']} | {metrics['map_status_disagreement_count']} "
+            f"| {metrics['outcome_disagreement_count']} | {metrics['both_captured']} | {time_delta} |"
+        )
+    (output / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     _save_maps(output / "maps.png", heuristic, classical, config)
     print(f"Evaluated {len(starts)} starts per policy. Results saved to {output}")
 
