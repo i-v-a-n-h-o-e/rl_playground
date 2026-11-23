@@ -35,6 +35,7 @@ from chauffeur_evader.homicidal_chauffeur import Observation, Transition
 ROOT = Path(__file__).resolve().parents[2]
 SEEDS = (17, 29, 43)
 DISCOUNT = 0.99
+POTENTIAL_SCALE = 0.1
 NETWORKS = {"baseline": [32, 32], "wide": {"pi": [64, 64], "vf": [32, 32]}}
 REWARDS = ("base", "potential")
 PPO_SETTINGS = {
@@ -51,7 +52,7 @@ PPO_SETTINGS = {
 
 class PotentialRewardEnv(ChauffeurPPOEnv):
     def _potential(self, distance: float) -> float:
-        return 0.1 / (1 + (distance - self.config.beta) / 4)
+        return POTENTIAL_SCALE / (1 + (distance - self.config.beta) / 4)
 
     def step(self, action: Observation) -> Transition:
         before = self._potential(hypot(*self.state))

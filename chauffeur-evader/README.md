@@ -340,20 +340,6 @@ model.learn(total_timesteps=128)
 можно оценить новой командой, но для сравнения качества обучения на обновлённой
 среде нужен новый запуск.
 
-### Передача агенту 08
-
-Команда из корня репозитория запускает новую серию `wide + potential` на seed
-17, 29 и 43 с сохранением моделей после 131 072 и 262 144 решений. Один
-зазор `--clearance 0.001` используется при обучении PPO и при оценке
-PPO, классического и эвристического водителей.
-Запрошенное значение сохраняется в `settings.json` каждого seed.
-
-```bash
-PYTHONPATH=chauffeur-evader .python_env/.venv/bin/python -m chauffeur_evader.chauffeur_task10.length \
-  --architecture wide --reward potential --clearance 0.001 \
-  --output chauffeur-evader/data/ppo-clearance-0001
-```
-
 При γ=0,5, β=0,3, dt=0,05 и T=20 среда и `rollout_feedback` используют одно
 правило выбора радиуса на эпизод. На истинном барьере выбор откладывается
 до схода с линии. Виртуальная окружность задаёт момент смены управления.
@@ -376,3 +362,67 @@ checkpoint на сокращённых бюджетах 1 024 и 2 048 реше�
 ```bash
 PYTHONPATH=chauffeur-evader .python_env/.venv/bin/python -m pytest -q chauffeur-evader/tests
 ```
+
+### PPO с зазором 0,001 для задачи 09
+
+Запустите из корня репозитория `rl_playground` с окружением `.python_env/.venv`.
+Команда создаёт `chauffeur-evader/data/ppo-clearance-0001/full/`.
+Для повторения укажите новый подкаталог через `--output`.
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=chauffeur-evader \
+  .python_env/.venv/bin/python -m chauffeur_evader.chauffeur_task10.clearance
+```
+
+#### Входные файлы относительно рабочего каталога
+
+- `chauffeur-evader/experiments/chauffeur-task10-v1/protocol.json` с параметрами обучения и SHA-256.
+- `chauffeur-evader/experiments/chauffeur-task10-v1/tuning_starts.csv` с 512 стартами в порядке оценки.
+- `chauffeur-evader/data/chauffeur-task10/length-wide-potential/seed-43/ppo-262144.zip` с архивными весами.
+- `chauffeur-evader/chauffeur_evader/chauffeur_benchmarks.py` с координатами P1–P8.
+
+Для каждого seed 17, 29 и 43 сценарий запускает один `learn` с нуля на CPU в
+один поток. Он использует `wide + potential` (actor 64×64, critic 32×32,
+масштаб потенциала 0,1, скидка PPO 0,99) и сохраняет ZIP после обновлений
+на 131 072 и 262 144 решениях. У обоих ZIP одного seed общий файл
+`seed-N/settings.json`. Оба чекпойнта заново загружаются с диска для
+детерминированной оценки. Все девять политик играют на одних 512 стартах
+и P1–P8 при зазоре 0,001, первом контакте и горизонте 20. Архивный seed 43
+обучался при нулевом зазоре и служит контролем переноса. Отдельная команда
+`chauffeur_evaluation --benchmarks` автоматически выбирает архивный seed 43.
+
+Быстрая проверка использует те же настройки PPO, два бюджета 1 024 и 2 048,
+первые восемь tuning-стартов и все P1–P8. Результаты появятся в
+`chauffeur-evader/data/ppo-clearance-0001/smoke/`.
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONPATH=chauffeur-evader \
+  .python_env/.venv/bin/python -m chauffeur_evader.chauffeur_task10.clearance --smoke
+```
+
+Признак успешного полного запуска — строка `Completed full run` и
+`summary.json` с `status: complete`, `mode: full`, пройденными 512 tuning-стартами,
+восемью реперами и семью записями в `models`. Каждая запись связывает политику
+в CSV с фактически загруженным путём, SHA-256, seed, бюджетом и файлом настроек.
+Из корня репозитория можно сверить все семь ZIP одной командой.
+
+```bash
+(cd chauffeur-evader/data/ppo-clearance-0001/full && shasum -a 256 -c models.sha256)
+```
+
+`episodes.csv` содержит исход и время захвата по каждому старту и политике.
+`paired_capture_times.csv` содержит разность `кандидат − эталон` для каждого
+общего захвата, а `summary.json` — число захватов, тайм-аутов (`time_limit`),
+`unsupported` и среднее парное изменение времени по каждому набору стартов.
+В `trajectories.csv.gz` записаны состояния, управление и события каждого
+шага. Ключ строки эпизода в обоих файлах — `dataset`, `start`, `policy`.
+
+#### Фраза для агента 09 после полного запуска
+
+> Возьми полный прогон из `chauffeur-evader/data/ppo-clearance-0001/full/`.
+> Проверь `status` и `mode` в `summary.json` и сверку ZIP по `models.sha256`.
+> Свяжи каждый checkpoint с seed, числом решений и `settings.json` через
+> `summary.json.models`. Для разбора прочитай `episodes.csv`,
+> `paired_capture_times.csv` и открой P1–P8 в `trajectories.csv.gz`.
+> Сопоставь оба бюджета каждого seed с архивным PPO seed 43, эвристикой
+> и классикой по захватам, тайм-аутам, `unsupported` и времени общих захватов.
